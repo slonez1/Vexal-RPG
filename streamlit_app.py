@@ -67,11 +67,12 @@ if prompt := st.chat_input("What is your next move?"):
         
         # Stream the 1200-word saga
         stream = client_gemini.models.generate_content_stream(
-            model="gemini-2.0-flash",
+            model="gemini-1.5-flash,
             contents=prompt,
             config={"max_output_tokens": 2000} # Allows for those long 1200-word responses
         )
-        
+    if not st.secrets["GEMINI_API_KEY"]:
+    st.error("Gemini API Key is missing in Secrets!")
         for chunk in stream:
             full_response += chunk.text
             response_placeholder.markdown(full_response + "▌")
