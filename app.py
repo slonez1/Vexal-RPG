@@ -89,7 +89,52 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "audio_id" not in st.session_state: st.session_state.audio_id = 0
 
 # --- 4. ENGINE FUNCTIONS ---
-if prompt := st.chat_input("Command Amara..."):
+# --- 4. REFINED VEXAL VOICE ENGINE (Zephyr Only) ---
+def speak(text, label=""):
+    if not st.session_state.get("audio_enabled", True):
+        return
+        
+    try:
+        # TWEAK THESE THREE VALUES BASED ON YOUR DEMO FINDINGS:
+        target_voice = "en-US-Neural2-F" # High-end intimate voice
+        target_speed = 0.96              # Closer to 1.0 is more natural
+        target_pitch = -1.5              # Lower is more resonant
+        
+        clean = re.sub(r'\[.*?\]|<.*?>|\*|_|#', '', text).strip()[:4800]
+        
+        # Wrapping in SSML to force a "soft" delivery
+        ssml_text = f"<speak><prosody volume='soft'>{clean}</prosody></speak>"
+        
+        input_tts = texttospeech.SynthesisInput(ssml=ssml_text)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="en-US", 
+            name=target_voice
+        )
+        
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3,
+            speaking_rate=target_speed,
+            pitch=target_pitch
+        )
+        
+        response = client_tts.synthesize_speech(
+            input=input_tts, 
+            voice=voice, 
+            audio_config=audio_config
+        )
+        
+        b64 = base64.b64encode(response.audio_content).decode("utf-8")
+        st.markdown(f'<audio autoplay src="data:audio/mp3;base64,{b64}" id="aud_{st.session_state.audio_id}_{label}">', unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Voice Error: {e}")
+
+def parse_logic(text):
+    gs = st.session_state.game_state
+    # Combat/Vaxel
+    hp_m = re.search(r'\[PLAYER DAMAGE: (.*?)\]', text)
+    ar_m = re.search(r'\[AROUSAL: \+(.*?)\]', text)
+    if hp_m: gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
+    if ar_m: gs['arousal'] += int(ar_m.group(1))if prompt := st.chat_input("Command Amara..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
@@ -127,65 +172,6 @@ if prompt := st.chat_input("Command Amara..."):
             if len(remaining_text.strip()) > 5:
                 speak(remaining_text, label="final")
                 
-            parse_logic(full_text)
-            st.session_state.messages.append({"role": "assistant", "content": full_text})
-
-def parse_logic(text):
-    gs = st.session_state.game_state
-    # Combat/Vaxel
-    hp_m = re.search(r'\[PLAYER DAMAGE: (.*?)\]', text)
-    ar_m = re.search(r'\[AROUSAL: \+(.*?)\]', text)
-    if hp_m: gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
-    if ar_m: gs['arousal'] += int(ar_m.group(1))
-    if gs['arousal'] >= 100:
-        gs['arousal'] = 0
-        gs['orgasm_count'] += 1
-    # Lore/Quest
-    npc_m = re.search(r'\[NEW NPC: (.*?) \| (.*?)\]', text)
-    loc_m = re.search(r'\[LOCATION: (.*?) \| (.*?)\]', text)
-    obj_m = re.search(r'\[NEW OBJECTIVE: (.*?)\]', text)
-    shrd_m = re.search(r'\[BASTION: \+1\]', text)
-    if npc_m: gs['lore_ledger']['NPCs'][npc_m.group(1).strip()] = npc_m.group(2).strip()
-    if loc_m: 
-        gs['lore_ledger']['Locations'][loc_m.group(1).strip()] = loc_m.group(2).strip()
-        gs['location'] = loc_m.group(1).strip()
-    if obj_m: gs['lore_ledger']['Main Quest']['Current Objective'] = obj_m.group(1).strip()
-    if shrd_m: gs['lore_ledger']['Main Quest']['Bastion Shards'] += 1
-
-# --- 5. UI LAYOUT ---
-st.markdown("<h1 style='text-align: center; color: #8e44ad;'>VEXAL ENGINE v3.5</h1>", unsafe_allow_html=True)
-
-with st.sidebar:
-    st.title("🛡️ COMMAND")
-    st.session_state.narrator = st.selectbox("Narrator:", ["Zephyr", "Kore", "Charon"])
-    gs = st.session_state.game_state
-    st.progress(gs['hp']/gs['hp_max'], text=f"HP: {gs['hp']}/{gs['hp_max']}")
-    st.progress(gs['arousal']/100, text=f"Arousal: {gs['arousal']}%")
-    st.write(f"**Location:** {gs['location']}")
-    cols = st.columns(3)
-    for i, (k, v) in enumerate(gs['attributes'].items()): cols[i%3].metric(k, v)
-
-tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs(["📜 CONSOLE", "👤 CHARACTER", "🎒 INVENTORY", "📖 LORE", "⚙️ SETTINGS"])
-
-with tab_console:
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
-    
-    if prompt := st.chat_input("Command Amara..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
-        with st.chat_message("assistant"):
-            res_box, full_text, audio_triggered = st.empty(), "", False
-            st.session_state.audio_id += 1
-            stream = client_gemini.models.generate_content_stream(model="gemini-2.0-flash", contents=prompt, config=types.GenerateContentConfig(system_instruction=SYSTEM_RULES))
-            for chunk in stream:
-                full_text += chunk.text
-                res_box.markdown(full_text + "▌")
-                if not audio_triggered and len(full_text) > 400:
-                    audio_triggered = True
-                    speak(full_text, "Start")
-            res_box.markdown(full_text)
-            if not audio_triggered: speak(full_text, "Full")
             parse_logic(full_text)
             st.session_state.messages.append({"role": "assistant", "content": full_text})
 
