@@ -111,7 +111,12 @@ if "game_state" not in st.session_state:
 if "messages" not in st.session_state: st.session_state.messages = []
 if "audio_id" not in st.session_state: st.session_state.audio_id = 0
 if "audio_enabled" not in st.session_state: st.session_state.audio_enabled = True
-
+if 'conditions' not in st.session_state.game_state:
+    st.session_state.game_state['conditions'] = {
+        "Vexal Active": "-2 to all Attributes (Distracted)",
+        "Knight-Commander Pride": "+1 to CHA (Status)"
+    }
+    
 # --- 4. ENGINE FUNCTIONS ---
 def speak(text, label=""):
     if not st.session_state.audio_enabled: return
@@ -227,20 +232,23 @@ with st.sidebar:
     # Custom CSS for Double-Height Progress Bars and Colors
     st.markdown("""
         <style>
-            /* COMPACT SIDEBAR FIX */
-            [data-testid="stSidebar"] { width: 300px !important; }
-            .stProgress > div > div > div > div { height: 24px !important; } /* Slimmer bars */
+            /* TARGETING THE PROGRESS BAR FILL DIRECTLY */
+            div[data-testid="stSidebar"] [data-testid="stProgress"] > div > div > div > div { height: 28px !important; }
             
-            /* FORCE COLORS - TARGETING INTERNAL WRAPPERS */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #ff4b4b !important; } /* HP */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #28a745 !important; } /* Stamina */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #007bff !important; } /* Mana */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #fd7e14 !important; } /* Favor */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #e83e8c !important; } /* Arousal */
-            
-            /* Compact Metrics */
-            [data-testid="stMetricValue"] { font-size: 0.9rem !important; }
-            [data-testid="stMetricLabel"] { font-size: 0.65rem !important; }
+            /* HP: Red */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[role="progressbar"] > div { background-color: #ff4b4b !important; }
+            /* Stamina: Green */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[role="progressbar"] > div { background-color: #28a745 !important; }
+            /* Mana: Blue */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[role="progressbar"] > div { background-color: #007bff !important; }
+            /* Divine Favor: Orange */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[role="progressbar"] > div { background-color: #fd7e14 !important; }
+            /* Arousal: Pink */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[role="progressbar"] > div { background-color: #e83e8c !important; }
+
+            /* Attribute Metrics: Extra Compact */
+            [data-testid="stMetricValue"] { font-size: 0.85rem !important; color: #f0f2f6 !important; }
+            [data-testid="stMetricLabel"] { font-size: 0.6rem !important; text-transform: uppercase; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -271,8 +279,8 @@ with st.sidebar:
             st.rerun()
 
 # --- 6. THE UI TABS ---
-tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
-    "📜 CONSOLE", "👤 CHARACTER", "🎒 INVENTORY", "📖 LORE", "⚙️ SETTINGS"
+tab_console, tab_status, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
+    "📜 CONSOLE", "🩹 STATUS", "👤 CHARACTER", "🎒 INVENTORY", "📖 LORE", "⚙️ SETTINGS"
 ])
 
 with tab_console:
@@ -281,8 +289,8 @@ with tab_console:
     pending_action = None
     
     # Chat History Container
-    chat_display = st.container(height=500)
-    with chat_display:
+    chat_container = st.container(height=450)
+    with chat_container:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
@@ -346,19 +354,19 @@ with tab_console:
 
     # 2. Command Prep Area
     st.write("---")
-    # Top Row: Selectors
-    sel_col1, sel_col2 = st.columns(2)
-    with sel_col1:
-        skills = list(SKILL_MAP.keys())
-        selected_skill = st.selectbox("Maneuver Select", skills, label_visibility="collapsed")
-    with sel_col2:
-        spells = gs['known_spells']
-        selected_spell = st.selectbox("Spell Select", spells, label_visibility="collapsed")
+    # Row 1: Selectors
+    sel1, sel2 = st.columns(2)
+    with sel1:
+        skills_list = list(SKILL_MAP.keys())
+        sel_skill = st.selectbox("Maneuver Select", skills_list, label_visibility="collapsed")
+    with sel2:
+        spells_list = gs['known_spells']
+        sel_spell = st.selectbox("Spell Select", spells_list, label_visibility="collapsed")
 
-    # Middle Row: The Action Input
+    # Row 2: The Command Input
     if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
-    user_input = st.text_input("Action Input", value=st.session_state.cmd_buffer, placeholder="Staged command or impromptu action...", label_visibility="collapsed")
-
+    action_box = st.text_input("Action Input", value=st.session_state.cmd_buffer, placeholder="Staged command or impromptu action...", label_visibility="collapsed")
+    
     # Bottom Row: The Three Flush Buttons
     btn_col1, btn_col2, btn_col3 = st.columns(3)
     with btn_col1:
@@ -383,6 +391,17 @@ with tab_console:
             # Process the action through Gemini...
             st.session_state.cmd_buffer = "" # Clear buffer after execution
             # [Insert Gemini streaming and speak logic here]
+
+with tab_status:
+    st.subheader("🩸 Current Status & Conditions")
+    if not st.session_state.game_state['conditions']:
+        st.write("Amara is currently free of any major ailments.")
+    else:
+        for condition, impact in st.session_state.game_state['conditions'].items():
+            with st.container(border=True):
+                c1, c2 = st.columns([1, 2])
+                c1.markdown(f"**{condition}**")
+                c2.caption(impact)
 
 with tab_char:
     st.header("Proficiencies")
@@ -422,17 +441,6 @@ if 'conditions' not in st.session_state.game_state:
         "Vexal Active": "-2 to all Attributes (Distracted)",
         "Knight-Commander Pride": "+1 to CHA (Status)"
     }
-
-with tab_status:
-    st.subheader("🩸 Current Status & Conditions")
-    if not st.session_state.game_state['conditions']:
-        st.write("Amara is currently free of any major ailments.")
-    else:
-        for condition, impact in st.session_state.game_state['conditions'].items():
-            with st.container(border=True):
-                c1, c2 = st.columns([1, 2])
-                c1.markdown(f"**{condition}**")
-                c2.caption(impact)
 
 with tab_sett:
     with st.expander("💾 Memory Management"):
