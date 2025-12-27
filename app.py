@@ -109,22 +109,55 @@ def speak(text, label=""):
 
 def parse_logic(text):
     gs = st.session_state.game_state
-    hp_m = re.search(r'\[PLAYER DAMAGE: (.*?)\]', text)
-    ar_m = re.search(r'\[AROUSAL: \+(.*?)\]', text)
-    if hp_m: gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
-    if ar_m: 
-        gs['arousal'] += int(ar_m.group(1))
-        if gs['arousal'] >= 100:
-            gs['arousal'] = 0
-            gs['orgasm_count'] += 1
+    # --- HP/Damage Safety Check ---
+    hp_m = re.search(r'\[PLAYER DAMAGE: (\d+)\]', text) # \d+ ensures it only looks for numbers
+    ar_m = re.search(r'\[AROUSAL: \+(\d+)\]', text)
+    
+    if hp_m:
+        try:
+            val = int(hp_m.group(1))
+            gs['hp'] = max(0, gs['hp'] - val)
+        except ValueError: pass # Ignores [PLAYER DAMAGE: X]
+    
+    if ar_m:
+        try:
+            val = int(ar_m.group(1))
+            gs['arousal'] += val
+            if gs['arousal'] >= 100:
+                gs['arousal'] = 0
+                gs['orgasm_count'] = min(10, gs['orgasm_count'] + 1)
+        except ValueError: pass
 
 # --- 5. SIDEBAR ---
 with st.sidebar:
-    st.markdown("## 🛡️ Vitals")
     gs = st.session_state.game_state
-    st.progress(gs['hp']/gs['hp_max'], text=f"HP: {gs['hp']}/{gs['hp_max']}")
+    st.title("🛡️ COMMAND")
+    
+    # --- VITALS ---
+    st.progress(gs['hp']/gs['hp_max'], text=f"❤️ HP: {gs['hp']}/{gs['hp_max']}")
+    st.progress(gs['stamina']/gs['stamina_max'], text=f"⚡ Stamina: {gs['stamina']}/{gs['stamina_max']}")
+    st.progress(gs['mana']/gs['mana_max'], text=f"✨ Mana: {gs['mana']}/{gs['mana_max']}")
+    
+    st.divider()
+    st.progress(gs['divine_favor']/100, text=f"⚖️ Divine Favor: {gs['divine_favor']}%")
+    
+    # --- THE VAXEL ---
+    st.subheader("🔗 THE VAXEL")
+    state_colors = {"Active": "green", "Inactive": "gray", "Ruined": "red"}
+    st.markdown(f"**State:** :{state_colors.get(gs['vaxel_state'], 'gray')}[{gs['vaxel_state']}]")
+    
     st.progress(gs['arousal']/100, text=f"Arousal: {gs['arousal']}%")
-    st.write(f"**Location:** {gs['location']}")
+    
+    # Subjugation Boxes (0-10)
+    boxes = "".join(["▣" if i < gs['orgasm_count'] else "▢" for i in range(10)])
+    st.markdown(f"**Subjugation Peak:** `{boxes}`")
+    
+    st.divider()
+    # RESTORING ATTRIBUTES
+    cols = st.columns(3)
+    attrs = list(gs['attributes'].items())
+    for i in range(len(attrs)):
+        cols[i % 3].metric(attrs[i][0], attrs[i][1])
 
 # --- 6. THE UI TABS ---
 tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
@@ -132,28 +165,41 @@ tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
 ])
 
 with tab_console:
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+    # --- ACTION BAR ---
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        all_skills = [s for cat in gs['skills'].values() for s in cat.keys()]
+        selected_skill = st.selectbox("Use Skill", all_skills, label_visibility="collapsed")
+        if st.button("💪 Roll Skill", use_container_width=True):
+            st.session_state.pending_action = f"I use my {selected_skill} skill."
             
+    with col2:
+        selected_spell = st.selectbox("Cast Spell", gs['known_spells'], label_visibility="collapsed")
+        if st.button("✨ Cast Spell", use_container_width=True):
+            st.session_state.pending_action = f"I cast {selected_spell}."
+            
+    with col3:
+        impromp = st.text_input("Impromptu...", label_visibility="collapsed", placeholder="Scream, hide, etc...")
+        if st.button("💥 Execute", use_container_width=True):
+            st.session_state.pending_action = impromp
+
+    # JavaScript Coordinator for Audio
     st.components.v1.html("""
         <script>
         function playNext(index) {
             const audios = window.parent.document.querySelectorAll('.vexal-audio');
             if (index < audios.length) {
-                audios[index].play();
-                audios[index].onended = () => playNext(index + 1);
+                // Remove any 'played' flags from previous refreshes
+                if (audios[index].paused && !audios[index].ended) {
+                    audios[index].play().catch(e => console.log("Autoplay blocked"));
+                    audios[index].onended = () => playNext(index + 1);
+                } else {
+                    playNext(index + 1);
+                }
             }
         }
-        // Check for new audio every second and start if nothing is playing
-        setInterval(() => {
-            const audios = window.parent.document.querySelectorAll('.vexal-audio');
-            const isPlaying = Array.from(audios).some(a => !a.paused);
-            if (!isPlaying && audios.length > 0) {
-                // Find the first audio that hasn't played yet (optional improvement)
-                // For now, let's just trigger the sequence
-                playNext(0); 
-            }
-        }, 1000);
+        setInterval(() => playNext(0), 2000);
         </script>
     """, height=0)
     
@@ -214,11 +260,14 @@ with tab_lore:
     st.write("### Persons of Interest", l['NPCs'])
 
 with tab_sett:
-    st.header("⚙️ Vexal System Settings")
-    with st.expander("🔊 Audio & Narrator Settings", expanded=True):
-        st.session_state.audio_enabled = st.toggle("Voice Narration Active", value=True)
-        if st.button("🔄 Restart Audio Engine"):
-            st.session_state.audio_id += 1
+    # AUDIO TOGGLE
+    st.session_state.audio_enabled = st.toggle("Audio Narration", value=st.session_state.get("audio_enabled", True))
+    
+    # UNDO BUTTON
+    if st.button("⬅️ Undo Last Turn"):
+        if len(st.session_state.messages) >= 2:
+            st.session_state.messages = st.session_state.messages[:-2]
+            st.success("Last turn erased from memory.")
             st.rerun()
 
     with st.expander("💾 Memory Management"):
