@@ -122,17 +122,36 @@ with st.sidebar:
     # Custom CSS for Double-Height Progress Bars and Colors
     st.markdown("""
         <style>
-            .stProgress > div > div > div > div { height: 30px !important; border-radius: 5px; }
-            /* Vitals Colors - Targeting based on nth-of-type to ensure color matches sidebar bars */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) > div > div { background-color: #ff4b4b; } /* HP */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) > div > div { background-color: #28a745; } /* Stamina */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) > div > div { background-color: #007bff; } /* Mana */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) > div > div { background-color: #fd7e14; } /* Favor */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) > div > div { background-color: #e83e8c; } /* Arousal */
-            
-            /* Smaller Font for Metrics */
-            [data-testid="stMetricLabel"] { font-size: 0.75rem !important; }
-            [data-testid="stMetricValue"] { font-size: 1.1rem !important; }
+            /* Double the height of all progress bars */
+            .stProgress > div > div > div > div { 
+                height: 30px !important; 
+                border-radius: 5px !important; 
+            }
+
+            /* 1. HP - Red */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[role="progressbar"] > div {
+                background-color: #ff4b4b !important;
+            }
+            /* 2. Stamina - Green */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[role="progressbar"] > div {
+                background-color: #28a745 !important;
+            }
+            /* 3. Mana - Blue */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[role="progressbar"] > div {
+                background-color: #007bff !important;
+            }
+            /* 4. Divine Favor - Orange */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[role="progressbar"] > div {
+                background-color: #fd7e14 !important;
+            }
+            /* 5. Arousal - Pink */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[role="progressbar"] > div {
+                background-color: #e83e8c !important;
+            }
+
+            /* Smaller Font for Metrics in Attributes */
+            [data-testid="stMetricLabel"] { font-size: 0.7rem !important; opacity: 0.8; }
+            [data-testid="stMetricValue"] { font-size: 1.0rem !important; font-weight: bold; }
         </style>
     """, unsafe_allow_html=True)
 
