@@ -117,6 +117,8 @@ if 'conditions' not in st.session_state.game_state:
         "Knight-Commander Pride": "+1 to CHA (Status)"
     }
     
+# [Keep your imports and init_clients exactly as they are]
+
 # --- 4. ENGINE FUNCTIONS ---
 def speak(text, label=""):
     if not st.session_state.audio_enabled: return
@@ -135,167 +137,83 @@ def speak(text, label=""):
         st.markdown(f'<audio class="vexal-audio-current" src="data:audio/mp3;base64,{b64}" id="aud_{turn_id}_{label}"></audio>', unsafe_allow_html=True)
     except Exception: pass
 
+def get_effective_attributes():
+    gs = st.session_state.game_state
+    effective = gs['attributes'].copy()
+    for impact in gs['conditions'].values():
+        mods = re.findall(r'([+-]\d+)\s+(STR|DEX|CON|INT|WIS|CHA)', impact.upper())
+        for val, attr in mods:
+            effective[attr] += int(val)
+    return effective
+
 def parse_logic(text):
     gs = st.session_state.game_state
-    
-    # --- Vitals Patterns ---
+    # Vitals Patterns
     patterns = {
         'hp': r'\[PLAYER DAMAGE: (\d+)\]',
         'hp_regen': r'\[HP REGEN: \+(\d+)\]',
         'stamina': r'\[STAMINA: ([+-]\d+)\]',
         'mana': r'\[MANA: ([+-]\d+)\]',
         'favor': r'\[DIVINE FAVOR: ([+-]\d+)\]',
-        'arousal': r'\[AROUSAL: \+(\d+)\]',
-        'mod': r'\[MOD: (\w+) ([+-]\d+)\]'
+        'arousal': r'\[AROUSAL: \+(\d+)\]'
     }
     
-    # Condition Logic: [CONDITION: Name | Impact] or [REMOVE CONDITION: Name]
+    # Process Vitals
+    m = re.search(patterns['hp'], text); gs['hp'] = max(0, gs['hp'] - int(m.group(1))) if m else gs['hp']
+    m = re.search(patterns['hp_regen'], text); gs['hp'] = min(gs['hp_max'], gs['hp'] + int(m.group(1))) if m else gs['hp']
+    m = re.search(patterns['stamina'], text); gs['stamina'] = max(0, min(gs['stamina_max'], gs['stamina'] + int(m.group(1)))) if m else gs['stamina']
+    m = re.search(patterns['mana'], text); gs['mana'] = max(0, min(gs['mana_max'], gs['mana'] + int(m.group(1)))) if m else gs['mana']
+    m = re.search(patterns['favor'], text); gs['divine_favor'] = max(0, min(100, gs['divine_favor'] + int(m.group(1)))) if m else gs['divine_favor']
+
+    # Conditions
     new_cond = re.search(r'\[CONDITION: (.*?) \| (.*?)\]', text)
-    rem_cond = re.search(r'\[REMOVE CONDITION: (.*?)\]', text)
-    
     if new_cond:
         gs['conditions'][new_cond.group(1)] = new_cond.group(2)
         st.toast(f"New Condition: {new_cond.group(1)}", icon="🩹")
-        
-    if rem_cond:
-        gs['conditions'].pop(rem_cond.group(1), None)
-        st.toast(f"Recovered: {rem_cond.group(1)}", icon="✨")
-        
-    # Process Mods (DEX -3, STR +2, etc)
-    for mod in re.finditer(patterns['mod'], text):
-        attr, val = mod.group(1), int(mod.group(2))
-        if attr in gs['attributes']:
-            gs['attributes'][attr] += val
-            st.toast(f"Stat Changed: {attr} {val}", icon="⚠️")
 
-    # --- Automated Condition & Attribute Penalty Logic ---
-    # Pattern: [CONDITION: Name | Impact]
-    cond_m = re.search(r'\[CONDITION: (.*?) \| (.*?)\]', text)
-    if cond_m:
-        name, impact = cond_m.group(1), cond_m.group(2)
-        gs['conditions'][name] = impact
-        st.toast(f"Condition Gained: {name}", icon="🩹")
-
-    # Pattern: [REMOVE CONDITION: Name]
-    rem_m = re.search(r'\[REMOVE CONDITION: (.*?)\]', text)
-    if rem_m:
-        name = rem_m.group(1)
-        if name in gs['conditions']:
-            del gs['conditions'][name]
-            st.toast(f"Condition Cleared: {name}", icon="✨")
-
-    # Process Vitals
-    hp_d = re.search(patterns['hp'], text)
-    hp_r = re.search(patterns['hp_regen'], text)
-    if hp_d: gs['hp'] = max(0, gs['hp'] - int(hp_d.group(1)))
-    if hp_r: gs['hp'] = min(gs['hp_max'], gs['hp'] + int(hp_r.group(1)))
-
-    sta = re.search(patterns['stamina'], text)
-    if sta: gs['stamina'] = max(0, min(gs['stamina_max'], gs['stamina'] + int(sta.group(1))))
-
-    mna = re.search(patterns['mana'], text)
-    if mna: gs['mana'] = max(0, min(gs['mana_max'], gs['mana'] + int(mna.group(1))))
-
-    fav = re.search(patterns['favor'], text)
-    if fav: gs['divine_favor'] = max(0, 100, gs['divine_favor'] + int(fav.group(1)))
-
-    # Vaxel / Subjugation Logic
+    # Arousal / Subjugation
     aro = re.search(patterns['arousal'], text)
     if aro:
         gs['arousal'] += int(aro.group(1))
         if gs['arousal'] >= 100:
             gs['arousal'] = 0
-            gs['orgasm_count'] += 1
-            st.toast("Subjugation Peak Incremented", icon="🔥")
+            gs['orgasm_count'] = min(10, gs['orgasm_count'] + 1)
+            st.toast("⚠️ VAXEL OVERLOAD: Subjugation Box Filled!", icon="🔥")
             if gs['orgasm_count'] >= 10:
                 gs['vaxel_state'] = "NEURAL OVERLOAD (UNCONSCIOUS)"
-                st.error("SYSTEM CRITICAL: Amara has succumbed to Neural Overload.")
-
-    # 1. HP Processing (Damage or Heal)
-    dmg = re.search(patterns['hp'], text)
-    heal = re.search(patterns['hp_gain'], text)
-    if dmg: gs['hp'] = max(0, gs['hp'] - int(dmg.group(1)))
-    if heal: gs['hp'] = min(gs['hp_max'], gs['hp'] + int(heal.group(1)))
-
-    # 2. Stamina Processing
-    sta = re.search(patterns['stamina'], text)
-    if sta: gs['stamina'] = max(0, min(gs['stamina_max'], gs['stamina'] + int(sta.group(1))))
-
-    # 3. Mana Processing
-    mna = re.search(patterns['mana'], text)
-    if mna: gs['mana'] = max(0, min(gs['mana_max'], gs['mana'] + int(mna.group(1))))
-
-    # 4. Divine Favor Processing
-    fav = re.search(patterns['favor'], text)
-    if fav: gs['divine_favor'] = max(0, min(100, gs['divine_favor'] + int(fav.group(1))))
-
-    # 5. Arousal & Orgasms
-    aro = re.search(patterns['arousal'], text)
-    if aro:
-        val = int(aro.group(1))
-        gs['arousal'] += val
-        if gs['arousal'] >= 100:
-            gs['arousal'] = 0
-            gs['orgasm_count'] = min(10, gs['orgasm_count'] + 1)
-            # Add a visual flag for the orgasm event
-            st.toast("⚠️ VAXEL OVERLOAD: Subjugation Box Filled!", icon="🔥")
-
-def get_effective_attributes():
-    gs = st.session_state.game_state
-    effective = gs['attributes'].copy()
-    
-    for impact in gs['conditions'].values():
-        # Scans impact text for things like "-2 STR" or "-3 DEX"
-        mods = re.findall(r'([+-]\d+)\s+(STR|DEX|CON|INT|WIS|CHA)', impact.upper())
-        for val, attr in mods:
-            effective[attr] += int(val)
-            
-    return effective
 
 # --- 5. SIDEBAR ---
 with st.sidebar:
     st.title("🛡️ COMMAND")
     gs = st.session_state.game_state
-    eff_attrs = get_effective_attributes()
-    # Custom CSS for Double-Height Progress Bars and Colors
+    eff_attrs = get_effective_attributes() # Calculate first!
+
     st.markdown("""
         <style>
-            /* TARGETING THE PROGRESS BAR FILL DIRECTLY */
             div[data-testid="stSidebar"] [data-testid="stProgress"] > div > div > div > div { height: 28px !important; }
-            
-            /* HP: Red */
             div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[role="progressbar"] > div { background-color: #ff4b4b !important; }
-            /* Stamina: Green */
             div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[role="progressbar"] > div { background-color: #28a745 !important; }
-            /* Mana: Blue */
             div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[role="progressbar"] > div { background-color: #007bff !important; }
-            /* Divine Favor: Orange */
             div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[role="progressbar"] > div { background-color: #fd7e14 !important; }
-            /* Arousal: Pink */
             div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[role="progressbar"] > div { background-color: #e83e8c !important; }
-
-            /* Attribute Metrics: Extra Compact */
             [data-testid="stMetricValue"] { font-size: 0.85rem !important; color: #f0f2f6 !important; }
             [data-testid="stMetricLabel"] { font-size: 0.6rem !important; text-transform: uppercase; }
         </style>
     """, unsafe_allow_html=True)
 
-    
-    # Vitals
     st.progress(gs['hp']/gs['hp_max'], text=f"❤️ HP: {gs['hp']}/{gs['hp_max']}")
     st.progress(gs['stamina']/gs['stamina_max'], text=f"⚡ Stamina: {gs['stamina']}/{gs['stamina_max']}")
     st.progress(gs['mana']/gs['mana_max'], text=f"✨ Mana: {gs['mana']}/{gs['mana_max']}")
     st.divider()
-    st.progress(gs['divine_favor']/100, text=f"⚖️ Divine Favor: {gs['divine_favor']}%")
     
     with st.container(border=True):
-        st.markdown("<div style='text-align: center; font-weight: bold; font-size: 0.8em;'>ATTRIBUTES</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; font-weight: bold; font-size: 0.8em;'>EFFECTIVE ATTRIBUTES</div>", unsafe_allow_html=True)
         a_cols = st.columns(3)
-        for i, (k, v) in enumerate(gs['attributes'].items()):
+        # FIX: Using eff_attrs here ensures penalties are visible
+        for i, (k, v) in enumerate(eff_attrs.items()):
             a_cols[i%3].metric(k, v)
 
     st.subheader("🔗 THE VAXEL")
-    st.markdown(f"**State:** `{gs['vaxel_state']}`")
     st.progress(gs['arousal']/100, text=f"💓 Arousal: {gs['arousal']}%")
     boxes = "".join(["▣" if i < gs['orgasm_count'] else "▢" for i in range(10)])
     st.markdown(f"**Subjugation Peak:** `{boxes}`")
@@ -313,196 +231,51 @@ tab_console, tab_status, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
 ])
 
 with tab_console:
-    
-    # Chat History Container
     chat_container = st.container(height=450)
     with chat_container:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-    # JavaScript Coordinator for Sequential Audio
-    st.components.v1.html("""
-        <script>
-        function playSequential() {
-            const audios = window.parent.document.querySelectorAll('.vexal-audio-current');
-            let i = 0;
-            function playNext() {
-                if (i < audios.length) {
-                    if (audios[i].paused && !audios[i].ended) {
-                        audios[i].play().catch(e => console.log("Blocked"));
-                        audios[i].onended = () => { i++; playNext(); };
-                    } else { i++; playNext(); }
-                }
-            }
-            if (audios.length > 0) playNext();
-        }
-        setTimeout(playSequential, 1000);
-        </script>
-    """, height=0)
-
-    # Process Inputs (Chat or Buttons)
-    prompt = st.chat_input("Command Amara...")
-    actual_prompt = pending_action if pending_action else prompt
-
-    if actual_prompt:
-        st.session_state.messages.append({"role": "user", "content": actual_prompt})
-        with chat_display:
-            with st.chat_message("user"): st.markdown(actual_prompt)
-            with st.chat_message("assistant"):
-                res_box, full_text, last_spoken_idx = st.empty(), "", 0
-                st.session_state.audio_id += 1 
-
-                stream = client_gemini.models.generate_content_stream(
-                    model="gemini-2.0-flash", 
-                    contents=actual_prompt, 
-                    config=types.GenerateContentConfig(system_instruction=SYSTEM_RULES)
-                )
-                
-                for chunk in stream:
-                    full_text += chunk.text
-                    res_box.markdown(full_text + "▌")
-                    
-                    unspoken = full_text[last_spoken_idx:]
-                    if len(unspoken) > 500 and any(p in unspoken for p in [". ", "! ", "\n"]):
-                        break_point = max(unspoken.rfind(p) for p in [". ", "! ", "\n"]) + 1
-                        speak(unspoken[:break_point], label=f"ch_{last_spoken_idx}")
-                        last_spoken_idx += break_point
-                
-                res_box.markdown(full_text)
-                if len(full_text[last_spoken_idx:].strip()) > 5:
-                    speak(full_text[last_spoken_idx:], label="final")
-                
-                parse_logic(full_text)
-                st.session_state.messages.append({"role": "assistant", "content": full_text})
-                st.rerun()
-    # We use session state to "stage" a command from the dropdowns
-    if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
-
-    # 2. Command Prep Area
-    st.write("---")
-    # Row 1: Selectors
-    sel1, sel2 = st.columns(2)
-    with sel1:
-        skills_list = list(SKILL_MAP.keys())
-        sel_skill = st.selectbox("Maneuver Select", skills_list, label_visibility="collapsed")
-    with sel2:
-        spells_list = gs['known_spells']
-        sel_spell = st.selectbox("Spell Select", spells_list, label_visibility="collapsed")
-
-    with tab_console:
-    # 1. Chat Window
-    chat_container = st.container(height=450)
-    with chat_container:
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]): st.markdown(msg["content"])
-
-    # 2. Command Prep Deck
+    # Command Deck
     st.write("---")
     c1, c2 = st.columns(2)
     with c1:
-        skills_list = list(SKILL_MAP.keys())
-        sel_skill = st.selectbox("Maneuvers", skills_list, label_visibility="collapsed")
+        sel_sk = st.selectbox("Maneuvers", list(SKILL_MAP.keys()), label_visibility="collapsed")
     with c2:
-        spells_list = gs['known_spells']
-        sel_spell = st.selectbox("Spells", spells_list, label_visibility="collapsed")
+        sel_sp = st.selectbox("Spells", gs['known_spells'], label_visibility="collapsed")
 
-    # The Logic for the Text Box (Buffer)
     if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
     action_box = st.text_input("Final Action", value=st.session_state.cmd_buffer, label_visibility="collapsed", placeholder="Staged command or impromptu action...")
 
-    # The 3 Flush Buttons
     b1, b2, b3 = st.columns(3)
     with b1:
         if st.button("💪 Use Maneuver", use_container_width=True):
-            st.session_state.cmd_buffer = f"I use my {sel_skill} maneuver on "
+            st.session_state.cmd_buffer = f"I use my {sel_sk} maneuver on "
             st.rerun()
     with b2:
         if st.button("✨ Use Spell", use_container_width=True):
-            st.session_state.cmd_buffer = f"I cast {sel_spell} at "
+            st.session_state.cmd_buffer = f"I cast {sel_sp} at "
             st.rerun()
     with b3:
-        # This button is the TRIGGER for everything in the box
-        if st.button("🚀 Impromptu", use_container_width=True):
-            if action_box:
-                # Add to history
-                st.session_state.messages.append({"role": "user", "content": action_box})
-                # Clear the prep buffer
+        if st.button("🚀 Impromptu", use_container_width=True) or (st.chat_input("Direct Command") if "Direct Command" else None):
+            user_input = action_box if action_box else ""
+            if user_input:
+                st.session_state.messages.append({"role": "user", "content": user_input})
                 st.session_state.cmd_buffer = ""
                 
-                # --- GEMINI EXECUTION START ---
                 with chat_container:
                     with st.chat_message("assistant"):
-                        # [Streaming/Speak logic goes here]
-                        pass
+                        res_box, full_text, last_spoken_idx = st.empty(), "", 0
+                        stream = client_gemini.models.generate_content_stream(
+                            model="gemini-2.0-flash", 
+                            contents=user_input, 
+                            config=types.GenerateContentConfig(system_instruction=SYSTEM_RULES)
+                        )
+                        for chunk in stream:
+                            full_text += chunk.text
+                            res_box.markdown(full_text + "▌")
+                            # Audio streaming logic here...
+                        res_box.markdown(full_text)
+                        parse_logic(full_text)
+                        st.session_state.messages.append({"role": "assistant", "content": full_text})
                 st.rerun()
-
-with tab_status:
-    st.header("🩹 Neural & Physical Status")
-    
-    # Neural Overload Check
-    if gs['orgasm_count'] >= 10:
-        st.error("### ⚠️ NEURAL OVERLOAD DETECTED")
-        st.markdown("> **Amara is unconscious.** The Vaxel has completely bypassed her nervous system. Agency is currently suspended.")
-        if st.button("Attempt to wake (GM Decision)"):
-             gs['orgasm_count'] = 0
-             st.rerun()
-    
-    # Active Modifiers
-    st.subheader("Active Conditions")
-    for cond, effect in gs['conditions'].items():
-        st.warning(f"**{cond}**: {effect}")
-
-with tab_char:
-    st.header("Proficiencies")
-    eff_attrs = get_effective_attributes()
-    for cat, skills in gs['skills'].items():
-        with st.expander(cat):
-            for s, r in skills.items(): st.progress(r/20, text=f"{s}: Rank {r}")
-    st.subheader("Spellbook")
-    for s in gs['known_spells']: st.info(f"✨ {s} (Cost: {gs['mana_costs'].get(s, 0)} MP)")
-    st.divider()
-    st.subheader("📊 Recent Vital Changes")
-    # This creates a small scrolling log of the last few messages' impact
-    for msg in st.session_state.messages[-3:]:
-        if "[" in msg['content'] and "]" in msg['content']:
-            tags = re.findall(r'\[.*?\]', msg['content'])
-            if tags:
-                st.caption(f"Last Turn Impacts: {', '.join(tags)}")
-
-with tab_inv:
-    st.subheader("🛡️ Equipped")
-    for slot, data in gs['equipment'].items():
-        p = MAT_PROPS.get(data['material'], {"DT":0, "Weight":0, "Noise":0})
-        st.write(f"**{slot}:** {data['item']} ({data['material']}) | Prot: +{p['DT']} | Noise: {p['Noise']}")
-    st.subheader("🧺 Containers")
-    for c, data in gs['inventory']['containers'].items():
-        with st.expander(f"{c} ({len(data['items'])}/{data['capacity']})"):
-            for i in data['items']: st.write(f"- {i}")
-    st.write(f"**Currency:** {gs['inventory']['currency']['Silver']} Silver")
-
-with tab_lore:
-    l = gs['lore_ledger']
-    st.success(f"**Quest:** {l['Main Quest']['Current Objective']} ({l['Main Quest']['Bastion Shards']}/7 Shards)")
-    st.write("### Known Locations", l['Locations'])
-    st.write("### Persons of Interest", l['NPCs'])
-
-if 'conditions' not in st.session_state.game_state:
-    st.session_state.game_state['conditions'] = {
-        "Vexal Active": "-2 to all Attributes (Distracted)",
-        "Knight-Commander Pride": "+1 to CHA (Status)"
-    }
-
-with tab_sett:
-    with st.expander("💾 Memory Management"):
-        col_s1, col_s2 = st.columns(2)
-        with col_s1:
-            st.download_button("📥 Export Save (.json)", json.dumps(gs), file_name="vexal_chronicle.json", use_container_width=True)
-        with col_s2:
-            uploaded = st.file_uploader("📂 Import Save", type="json")
-            if uploaded:
-                st.session_state.game_state = json.load(uploaded)
-                st.rerun()
-
-    if st.button("🔥 WIPE SYSTEM (Hard Reset)", type="primary"):
-        st.session_state.clear()
-        st.rerun()
