@@ -168,6 +168,22 @@ def parse_logic(text):
             gs['attributes'][attr] += val
             st.toast(f"Stat Changed: {attr} {val}", icon="⚠️")
 
+    # --- Automated Condition & Attribute Penalty Logic ---
+    # Pattern: [CONDITION: Name | Impact]
+    cond_m = re.search(r'\[CONDITION: (.*?) \| (.*?)\]', text)
+    if cond_m:
+        name, impact = cond_m.group(1), cond_m.group(2)
+        gs['conditions'][name] = impact
+        st.toast(f"Condition Gained: {name}", icon="🩹")
+
+    # Pattern: [REMOVE CONDITION: Name]
+    rem_m = re.search(r'\[REMOVE CONDITION: (.*?)\]', text)
+    if rem_m:
+        name = rem_m.group(1)
+        if name in gs['conditions']:
+            del gs['conditions'][name]
+            st.toast(f"Condition Cleared: {name}", icon="✨")
+
     # Process Vitals
     hp_d = re.search(patterns['hp'], text)
     hp_r = re.search(patterns['hp_regen'], text)
@@ -224,11 +240,23 @@ def parse_logic(text):
             # Add a visual flag for the orgasm event
             st.toast("⚠️ VAXEL OVERLOAD: Subjugation Box Filled!", icon="🔥")
 
+def get_effective_attributes():
+    gs = st.session_state.game_state
+    effective = gs['attributes'].copy()
+    
+    for impact in gs['conditions'].values():
+        # Scans impact text for things like "-2 STR" or "-3 DEX"
+        mods = re.findall(r'([+-]\d+)\s+(STR|DEX|CON|INT|WIS|CHA)', impact.upper())
+        for val, attr in mods:
+            effective[attr] += int(val)
+            
+    return effective
+
 # --- 5. SIDEBAR ---
 with st.sidebar:
     st.title("🛡️ COMMAND")
     gs = st.session_state.game_state
-
+    eff_attrs = get_effective_attributes()
     # Custom CSS for Double-Height Progress Bars and Colors
     st.markdown("""
         <style>
@@ -252,6 +280,7 @@ with st.sidebar:
         </style>
     """, unsafe_allow_html=True)
 
+    
     # Vitals
     st.progress(gs['hp']/gs['hp_max'], text=f"❤️ HP: {gs['hp']}/{gs['hp_max']}")
     st.progress(gs['stamina']/gs['stamina_max'], text=f"⚡ Stamina: {gs['stamina']}/{gs['stamina_max']}")
@@ -284,9 +313,6 @@ tab_console, tab_status, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
 ])
 
 with tab_console:
-    # --- ACTION BAR (TOP OF CONSOLE) ---
-    col1, col2, col3 = st.columns(3)
-    pending_action = None
     
     # Chat History Container
     chat_container = st.container(height=450)
@@ -363,48 +389,72 @@ with tab_console:
         spells_list = gs['known_spells']
         sel_spell = st.selectbox("Spell Select", spells_list, label_visibility="collapsed")
 
-    # Row 2: The Command Input
+    with tab_console:
+    # 1. Chat Window
+    chat_container = st.container(height=450)
+    with chat_container:
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]): st.markdown(msg["content"])
+
+    # 2. Command Prep Deck
+    st.write("---")
+    c1, c2 = st.columns(2)
+    with c1:
+        skills_list = list(SKILL_MAP.keys())
+        sel_skill = st.selectbox("Maneuvers", skills_list, label_visibility="collapsed")
+    with c2:
+        spells_list = gs['known_spells']
+        sel_spell = st.selectbox("Spells", spells_list, label_visibility="collapsed")
+
+    # The Logic for the Text Box (Buffer)
     if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
-    action_box = st.text_input("Action Input", value=st.session_state.cmd_buffer, placeholder="Staged command or impromptu action...", label_visibility="collapsed")
-    
-    # Bottom Row: The Three Flush Buttons
-    btn_col1, btn_col2, btn_col3 = st.columns(3)
-    with btn_col1:
+    action_box = st.text_input("Final Action", value=st.session_state.cmd_buffer, label_visibility="collapsed", placeholder="Staged command or impromptu action...")
+
+    # The 3 Flush Buttons
+    b1, b2, b3 = st.columns(3)
+    with b1:
         if st.button("💪 Use Maneuver", use_container_width=True):
-            st.session_state.cmd_buffer = f"I use my {selected_skill} maneuver on "
+            st.session_state.cmd_buffer = f"I use my {sel_skill} maneuver on "
             st.rerun()
-    with btn_col2:
+    with b2:
         if st.button("✨ Use Spell", use_container_width=True):
-            st.session_state.cmd_buffer = f"I cast {selected_spell} at "
+            st.session_state.cmd_buffer = f"I cast {sel_spell} at "
             st.rerun()
-    with btn_col3:
+    with b3:
+        # This button is the TRIGGER for everything in the box
         if st.button("🚀 Impromptu", use_container_width=True):
-            # This button acts as the final "Execute"
-            if user_input:
-                st.session_state.messages.append({"role": "user", "content": user_input})
-                st.session_state.cmd_buffer = "" # Clear buffer
-                # Trigger Gemini logic here...
+            if action_box:
+                # Add to history
+                st.session_state.messages.append({"role": "user", "content": action_box})
+                # Clear the prep buffer
+                st.session_state.cmd_buffer = ""
+                
+                # --- GEMINI EXECUTION START ---
+                with chat_container:
+                    with st.chat_message("assistant"):
+                        # [Streaming/Speak logic goes here]
+                        pass
                 st.rerun()
-        
-    if st.button("🚀 EXECUTE ACTION", use_container_width=True):
-        if final_input:
-            # Process the action through Gemini...
-            st.session_state.cmd_buffer = "" # Clear buffer after execution
-            # [Insert Gemini streaming and speak logic here]
 
 with tab_status:
-    st.subheader("🩸 Current Status & Conditions")
-    if not st.session_state.game_state['conditions']:
-        st.write("Amara is currently free of any major ailments.")
-    else:
-        for condition, impact in st.session_state.game_state['conditions'].items():
-            with st.container(border=True):
-                c1, c2 = st.columns([1, 2])
-                c1.markdown(f"**{condition}**")
-                c2.caption(impact)
+    st.header("🩹 Neural & Physical Status")
+    
+    # Neural Overload Check
+    if gs['orgasm_count'] >= 10:
+        st.error("### ⚠️ NEURAL OVERLOAD DETECTED")
+        st.markdown("> **Amara is unconscious.** The Vaxel has completely bypassed her nervous system. Agency is currently suspended.")
+        if st.button("Attempt to wake (GM Decision)"):
+             gs['orgasm_count'] = 0
+             st.rerun()
+    
+    # Active Modifiers
+    st.subheader("Active Conditions")
+    for cond, effect in gs['conditions'].items():
+        st.warning(f"**{cond}**: {effect}")
 
 with tab_char:
     st.header("Proficiencies")
+    eff_attrs = get_effective_attributes()
     for cat, skills in gs['skills'].items():
         with st.expander(cat):
             for s, r in skills.items(): st.progress(r/20, text=f"{s}: Rank {r}")
