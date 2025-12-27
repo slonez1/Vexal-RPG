@@ -64,31 +64,29 @@ if prompt := st.chat_input("What is your next move?"):
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         full_response = ""
+        audio_triggered = False  # Track if we've started the voice yet
         
-        # Stream the 1200-word saga
-        # Stream the saga
         stream = client_gemini.models.generate_content_stream(
-            model="gemini-2.0-flash-exp",
-            contents=prompt,
-            config={"max_output_tokens": 2000} 
+            model="gemini-1.5-flash",
+            contents=prompt
         )
-        if not st.secrets["GEMINI_API_KEY"]:
-            st.error("Gemini API Key is missing in Secrets!")
-
-    
+        
         for chunk in stream:
             full_response += chunk.text
             response_placeholder.markdown(full_response + "▌")
+            
+            # FAST TRIGGER: Start audio once we have ~3 paragraphs (approx 1000 chars)
+            if not audio_triggered and len(full_response) > 1000:
+                audio_triggered = True
+                with st.spinner("Vexal voice manifesting..."):
+                    audio_html = get_audio_html(full_response) # Narrates the "Intro"
+                    st.markdown(audio_html, unsafe_allow_html=True)
         
         response_placeholder.markdown(full_response)
         
-        # Audio Narration Trigger (After text is done)
-        with st.status("Voice of the Vexal is manifesting..."):
-            try:
-                audio_html = get_audio_html(full_response)
-                st.markdown(audio_html, unsafe_allow_html=True)
-                st.success("Narration complete.")
-            except Exception as e:
-                st.error(f"Audio failed: {e}")
+        # If the story was very short, trigger audio at the end
+        if not audio_triggered:
+            audio_html = get_audio_html(full_response)
+            st.markdown(audio_html, unsafe_allow_html=True)
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})
