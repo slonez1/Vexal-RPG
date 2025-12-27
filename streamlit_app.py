@@ -71,8 +71,10 @@ if prompt := st.chat_input("What is your next move?"):
             contents=prompt,
             config={"max_output_tokens": 2000} # Allows for those long 1200-word responses
         )
-    if not st.secrets["GEMINI_API_KEY"]:
-    st.error("Gemini API Key is missing in Secrets!")
+        if not st.secrets["GEMINI_API_KEY"]:
+            st.error("Gemini API Key is missing in Secrets!")
+
+    
         for chunk in stream:
             full_response += chunk.text
             response_placeholder.markdown(full_response + "▌")
