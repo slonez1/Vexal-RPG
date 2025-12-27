@@ -89,44 +89,46 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "audio_id" not in st.session_state: st.session_state.audio_id = 0
 
 # --- 4. ENGINE FUNCTIONS ---
-def speak(text, label=""):
-    if not st.session_state.get("audio_enabled", True):
-        return
-        
-    try:
-        clean = re.sub(r'\[.*?\]|<.*?>|\*|_|#', '', text).strip()[:4800]
-        
-        # We'll use the high-quality Wavenet voices which allow for Pitch/Rate tuning
-        v_map = {
-            "Zephyr": "en-US-Wavenet-F",  # Intimate, softer female
-            "Kore": "en-US-Wavenet-C",    # Neutral, clear
-            "Charon": "en-US-Wavenet-D"   # Deep, resonant male
-        }
-        v_choice = st.session_state.get("narrator", "Zephyr")
-        
-        input_tts = texttospeech.SynthesisInput(text=clean)
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="en-US", 
-            name=v_map[v_choice]
-        )
-        
-        # These parameters will NOW work because Wavenet supports them
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=0.88,  # Slower = more breathy/dramatic
-            pitch=-3.0           # Lower = more intimate/serious
-        )
-        
-        response = client_tts.synthesize_speech(
-            input=input_tts, 
-            voice=voice, 
-            audio_config=audio_config
-        )
-        
-        b64 = base64.b64encode(response.audio_content).decode("utf-8")
-        st.markdown(f'<audio autoplay src="data:audio/mp3;base64,{b64}" id="aud_{st.session_state.audio_id}_{label}">', unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Voice Error: {e}")
+if prompt := st.chat_input("Command Amara..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            res_box = st.empty()
+            full_text = ""
+            last_spoken_idx = 0  # Tracks where the voice is at
+            st.session_state.audio_id += 1 
+
+            stream = client_gemini.models.generate_content_stream(
+                model="gemini-2.0-flash", 
+                contents=prompt, 
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_RULES)
+            )
+            
+            for chunk in stream:
+                full_text += chunk.text
+                res_box.markdown(full_text + "▌")
+                
+                # AUDIO CHUNKING LOGIC:
+                # If we have at least 500 new characters AND the AI just finished a sentence...
+                current_unspoken = full_text[last_spoken_idx:]
+                if len(current_unspoken) > 500 and any(p in current_unspoken for p in [". ", "! ", "? ", "\n"]):
+                    # Find the last sentence end to keep the narration natural
+                    break_point = max(current_unspoken.rfind(p) for p in [". ", "! ", "? ", "\n"]) + 1
+                    chunk_to_speak = current_unspoken[:break_point]
+                    
+                    speak(chunk_to_speak, label=f"chunk_{last_spoken_idx}")
+                    last_spoken_idx += break_point
+            
+            # Finalize: Speak any remaining text that didn't hit the 500 char limit
+            res_box.markdown(full_text)
+            remaining_text = full_text[last_spoken_idx:]
+            if len(remaining_text.strip()) > 5:
+                speak(remaining_text, label="final")
+                
+            parse_logic(full_text)
+            st.session_state.messages.append({"role": "assistant", "content": full_text})
 
 def parse_logic(text):
     gs = st.session_state.game_state
