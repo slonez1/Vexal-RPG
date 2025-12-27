@@ -35,16 +35,21 @@ with st.sidebar:
         st.rerun()
 
 # --- 4. AUDIO FUNCTION ---
-def get_audio_html(text):
-    # We cap at 4800 to avoid API crashes, ensuring a long narration
-    clean_text = re.sub(r'\*|_|#', '', text)[:4800]
-    input_text = texttospeech.SynthesisInput(text=clean_text)
-    voice = texttospeech.VoiceSelectionParams(language_code="en-US", name="en-US-Journey-F")
-    audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3, speaking_rate=1.0)
-    
-    response = client_tts.synthesize_speech(input=input_text, voice=voice, audio_config=audio_config)
-    audio_b64 = base64.b64encode(response.audio_content).decode("utf-8")
-    return f'<audio autoplay src="data:audio/mp3;base64,{audio_b64}">'
+def get_audio_html(text, label="VEXAL"):
+    try:
+        # Google's limit is 5000, so we pass only what's requested
+        input_text = texttospeech.SynthesisInput(text=text)
+        voice = texttospeech.VoiceSelectionParams(language_code="en-US", name="en-US-Journey-F")
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3, speaking_rate=1.0)
+        
+        response = client_tts.synthesize_speech(input=input_text, voice=voice, audio_config=audio_config)
+        audio_b64 = base64.b64encode(response.audio_content).decode("utf-8")
+        
+        # We display the player. The first one will 'autoplay'.
+        st.write(f"🔊 {label} Audio Ready")
+        st.audio(f"data:audio/mp3;base64,{audio_b64}")
+    except Exception as e:
+        st.error(f"Audio Error: {e}")
 
 # --- 5. MAIN INTERFACE ---
 st.title("🌌 The Vexal Chronicles")
