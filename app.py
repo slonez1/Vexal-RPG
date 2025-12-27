@@ -1,120 +1,81 @@
-# --- 6. SOPHISTICATED UI TABS ---
-tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
-    "📜 CONSOLE", "👤 CHARACTER", "🎒 INVENTORY", "📖 LORE", "⚙️ SETTINGS"
-])
+import streamlit as st
+import re
+import json
+import base64
+import time
+from google import genai
+from google.genai import types
+from google.cloud import texttospeech
+from google.oauth2 import service_account
 
-# --- TAB 1: CONSOLE (The Game Loop) ---
-with tab_console:
-    # (Keep your existing Chat Display and st.chat_input logic here)
-    pass
+# --- 1. CONFIGURATION & INITIALIZATION ---
+st.set_page_config(page_title="Vexal Engine", layout="wide", initial_sidebar_state="expanded")
 
-# --- TAB 2: CHARACTER (Attributes, Skills, & Spells) ---
-with tab_char:
-    st.header(f"✨ {gs['name']} | Level {gs['level']} Paladin")
-    
-    col_attr, col_skills = st.columns([1, 2])
-    
-    with col_attr:
-        st.subheader("Attributes")
-        for attr, val in gs['attributes'].items():
-            st.metric(label=attr, value=val)
+# Authentication & Clients
+@st.cache_resource
+def init_clients():
+    try:
+        gcp_info = st.secrets["gcp_service_account"]
+        creds = service_account.Credentials.from_service_account_info(gcp_info)
+        client_tts = texttospeech.TextToSpeechClient(credentials=creds)
+        client_gemini = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+        return client_tts, client_gemini
+    except Exception as e:
+        st.error(f"Authentication Error: Check your Streamlit Secrets. {e}")
+        return None, None
 
-    with col_skills:
-        st.subheader("Skill Proficiencies")
-        # Organizing skills by category
-        for cat, skills in gs['skills'].items():
-            with st.expander(f"{cat} Skills"):
-                for s_name, s_rank in skills.items():
-                    # Visual rank bar for each skill
-                    st.write(f"**{s_name}**")
-                    st.progress(s_rank / 20, text=f"Rank {s_rank}")
+client_tts, client_gemini = init_clients()
 
-    st.divider()
-    st.subheader("📜 Spellbook")
-    spell_cols = st.columns(2)
-    for i, spell in enumerate(gs['known_spells']):
-        # We can pull cost/effect from a dictionary or have Gemini describe them
-        cost = gs.get('mana_costs', {}).get(spell, "??")
-        with spell_cols[i % 2]:
-            with st.expander(f"✨ {spell}"):
-                st.caption(f"Mana Cost: {cost}")
-                st.write("Mechanical Effect: *Determined by Divine Favor and Paladin Level.*")
+# --- 2. GAME CONSTANTS ---
+MAT_PROPS = {
+    "Leather": {"DT": 1, "Weight": 0.5, "Noise": -1},
+    "Steel":   {"DT": 5, "Weight": 1.0, "Noise": -8},
+    "Mithril": {"DT": 8, "Weight": 0.1, "Noise": -3},
+    "Aureite": {"DT": 6, "Weight": 0.5, "Noise": -5},
+    "Silver-Steel": {"DT": 6, "Weight": 0.8, "Noise": -6},
+    "Gold-Filigree": {"DT": 2, "Weight": 0.4, "Noise": -2}
+}
 
-# --- TAB 3: INVENTORY (Bags & Equipment) ---
-with tab_inv:
-    st.header("🎒 Equipment & Loadout")
-    
-    # Armor and Weapons Detail
-    st.subheader("🛡️ Equipped Gear")
-    armor_cols = st.columns(2)
-    for i, (slot, data) in enumerate(gs['equipment'].items()):
-        with armor_cols[i % 2]:
-            mat = data.get('material', 'Steel')
-            # Fetching properties from our MAT_PROPS logic
-            props = MAT_PROPS.get(mat, {"DT": 0, "Weight": 0, "Noise": 0})
-            
-            st.info(f"**{slot}: {data['item']}**\n\n"
-                    f"Material: {mat} | Prot: +{props['DT']} | Weight: {props['Weight']} | Noise: {props['Noise']}")
+SYSTEM_RULES = r"""
+'You are a "Perfectionist" GM narrating an extremely uncensored dark fantasy RPG.'
+[... INCLUDE YOUR FULL 7-PARAGRAPH SYSTEM RULES HERE ...]
 
-    st.divider()
-    st.subheader("🧺 Containers")
-    cont_cols = st.columns(len(gs['inventory']['containers']))
-    for i, (name, storage) in enumerate(gs['inventory']['containers'].items()):
-        with cont_cols[i]:
-            st.write(f"**{name}**")
-            st.caption(f"Capacity: {len(storage['items'])}/{storage['capacity']}")
-            for item in storage['items']:
-                st.markdown(f"- {item}")
-    
-    st.metric("Silver Coins", f"{gs['inventory']['currency']['Silver']} sp")
+### [GM MECHANICAL TAGGING RULES]
+You MUST trigger the following tags to update the Player's UI:
+1. NPC Discovery: [NEW NPC: Name | 1-sentence bio/hook]
+2. Travel: [LOCATION: Room Name | Short sensory description]
+3. Combat: [PLAYER DAMAGE: X]
+4. Vaxel Activity: [AROUSAL: +X]
+5. Quest Progress: 
+   - [BASTION: +1]
+   - [NEW OBJECTIVE: Short summary of next goal]
+"""
 
-# --- TAB 4: LORE (People, Places, & Shards) ---
-with tab_lore:
-    st.header("📖 The Lore Ledger")
-    
-    lore_p, lore_l, lore_q = st.columns(3)
-    
-    with lore_p:
-        st.subheader("Characters")
-        for npc, bio in gs['lore_ledger']['NPCs'].items():
-            st.write(f"**{npc}**: {bio}")
-            
-    with lore_l:
-        st.subheader("Places")
-        for loc, desc in gs['lore_ledger']['Locations'].items():
-            st.write(f"**{loc}**: {desc}")
-
-    with lore_q:
-        st.subheader("🧭 Current Quest")
-        quest = gs['lore_ledger']['Main Quest']
-        st.success(f"**Objective:** {quest['Current Objective']}")
-        st.info(f"💎 **Bastion Shards Found:** {quest['Bastion Shards']} / 7")
-
-# --- TAB 5: SETTINGS (System Controls) ---
-with tab_sett:
-    st.header("⚙️ Game Settings")
-    
-    # Save/Load Logic
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button("💾 Download Save", use_container_width=True):
-            save_str = json.dumps(st.session_state.game_state, indent=4)
-            st.download_button("Click to Download .json", save_str, file_name="amara_save.json")
-    
-    with c2:
-        uploaded_file = st.file_uploader("📂 Load Save File", type="json")
-        if uploaded_file:
-            st.session_state.game_state = json.load(uploaded_file)
-            st.success("State Loaded! Refreshing...")
-            st.rerun()
-
-    with c3:
-        if st.button("🔥 HARD RESET", type="primary", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
-
-    st.divider()
-    st.subheader("🔊 Audio Diagnostics")
-    st.write(f"Current Narrator: **{st.session_state.narrator}**")
-    if st.button("🎵 Test Voice Connection"):
-        speak("Voice systems operational, Master. The Spire awaits.")
+# --- 3. SESSION STATE (The Cabinet) ---
+if "game_state" not in st.session_state:
+    st.session_state.game_state = {
+        'name': 'Amara Silvermoon', 'level': 10,
+        'hp': 100, 'hp_max': 250,
+        'mana': 30, 'mana_max': 200,
+        'stamina': 100, 'stamina_max': 180,
+        'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95,
+        'location': 'The Spire Entrance',
+        'vaxel_state': "Active",
+        'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
+        'skills': {
+            'Martial': {'One-Handed': 10, 'Heavy Armor': 8},
+            'Mystical': {'Holy': 10, 'Restoration': 7},
+            'Professional': {'Athletics': 6},
+            'Social': {'Insight': 10},
+            'Subterfuge': {'Stealth': 2}
+        },
+        'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Lesser Heal'],
+        'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Lesser Heal': 12},
+        'equipment': {
+            'Torso': {'item': 'Knight-Commander Plate', 'material': 'Steel'},
+            'MainHand': {'item': 'Solari Longsword', 'material': 'Silver-Steel'}
+        },
+        'inventory': {
+            'containers': {
+                'Belt Pouch': {'capacity': 5, 'items': ['Silver Key']},
+                'Satchel': {'capacity': 15
