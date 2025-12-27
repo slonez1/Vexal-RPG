@@ -95,27 +95,26 @@ def speak(text, label=""):
         
     try:
         clean = re.sub(r'\[.*?\]|<.*?>|\*|_|#', '', text).strip()[:4800]
+        
+        # We'll use the high-quality Wavenet voices which allow for Pitch/Rate tuning
         v_map = {
-            "Zephyr": "en-US-Chirp3-HD-Zephyr", 
-            "Kore": "en-US-Chirp3-HD-Kore", 
-            "Charon": "en-US-Chirp3-HD-Charon"
+            "Zephyr": "en-US-Wavenet-F",  # Intimate, softer female
+            "Kore": "en-US-Wavenet-C",    # Neutral, clear
+            "Charon": "en-US-Wavenet-D"   # Deep, resonant male
         }
         v_choice = st.session_state.get("narrator", "Zephyr")
         
         input_tts = texttospeech.SynthesisInput(text=clean)
-        
-        # TUNING FOR "BREATHY" QUALITY:
-        # Lowering pitch and slightly slowing rate often removes the 'twang' 
-        # and adds intimacy to the Journey/Chirp voices.
         voice = texttospeech.VoiceSelectionParams(
             language_code="en-US", 
             name=v_map[v_choice]
         )
         
+        # These parameters will NOW work because Wavenet supports them
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=0.90,  # Slightly slower for "breathy" pacing
-            pitch=-2.0           # Slightly lower for a richer, more intimate tone
+            speaking_rate=0.88,  # Slower = more breathy/dramatic
+            pitch=-3.0           # Lower = more intimate/serious
         )
         
         response = client_tts.synthesize_speech(
@@ -213,60 +212,39 @@ with tab_lore:
     st.write("### Persons of Interest", l['NPCs'])
 
 with tab_sett:
-    st.header("⚙️ System Control")
+    st.header("⚙️ Vexal System Settings")
     
-    # --- AUDIO CONTROLS ---
-    st.subheader("🔊 Audio Configuration")
-    col_a1, col_a2 = st.columns(2)
-    
-    with col_a1:
-        st.session_state.audio_enabled = st.toggle("Enable Voice Narration", value=True)
-        st.session_state.narrator = st.selectbox(
-            "Select Voice Personality:", 
-            ["Zephyr", "Kore", "Charon"],
-            index=0
+    # --- AUDIO BLOCK ---
+    with st.expander("🔊 Audio & Narrator Settings", expanded=True):
+        st.session_state.audio_enabled = st.toggle("Voice Narration Active", value=True)
+        st.session_state.narrator = st.radio(
+            "Narrator Persona", 
+            ["Zephyr", "Kore", "Charon"], 
+            horizontal=True,
+            help="Zephyr: Intimate/Breathy | Kore: Clear/Direct | Charon: Deep/Ancient"
         )
-        
-    with col_a2:
-        if st.button("🎵 Reset Audio Engine", use_container_width=True):
+        if st.button("🔄 Restart Audio Engine"):
             st.session_state.audio_id += 1
-            speak("Voice systems recalibrated.")
-            st.success("Audio context refreshed.")
+            st.rerun()
 
+    # --- SAVE/LOAD BLOCK ---
+    with st.expander("💾 Memory Management"):
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            st.download_button(
+                "📥 Export Save (.json)",
+                json.dumps(st.session_state.game_state),
+                file_name="vexal_chronicle.json",
+                use_container_width=True
+            )
+        with col_s2:
+            uploaded = st.file_uploader("📂 Import Save", type="json")
+            if uploaded:
+                st.session_state.game_state = json.load(uploaded)
+                st.success("State Uploaded! Click 'Reboot' to apply.")
+
+    # --- RESET ---
     st.divider()
-
-    # --- DATA MANAGEMENT ---
-    st.subheader("💾 Save & Load")
-    col_s1, col_s2 = st.columns(2)
-    
-    with col_s1:
-        # SAVE GAME
-        save_data = json.dumps(st.session_state.game_state, indent=4)
-        st.download_button(
-            label="📥 Download Save File",
-            data=save_data,
-            file_name=f"vaxel_save_{int(time.time())}.json",
-            mime="application/json",
-            use_container_width=True
-        )
-        
-    with col_s2:
-        # LOAD GAME
-        uploaded_file = st.file_uploader("📂 Upload Save File", type="json")
-        if uploaded_file is not None:
-            try:
-                loaded_state = json.load(uploaded_file)
-                st.session_state.game_state = loaded_state
-                st.success("Game State Loaded!")
-                if st.button("Apply Changes"):
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Load Error: {e}")
-
-    st.divider()
-
-    # --- SYSTEM ---
-    st.subheader("⚠️ Danger Zone")
-    if st.button("🔥 FULL SYSTEM RESET", type="primary", use_container_width=True):
+    if st.button("🔥 WIPE SYSTEM (Hard Reset)", type="primary"):
         st.session_state.clear()
         st.rerun()
