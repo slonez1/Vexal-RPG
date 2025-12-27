@@ -131,13 +131,17 @@ def speak(text, label=""):
 def parse_logic(text):
     gs = st.session_state.game_state
     # Combat/Vaxel
-    hp_m = re.search(r'\[PLAYER DAMAGE: (.*?)\]', text)
+   hp_m = re.search(r'\[PLAYER DAMAGE: (.*?)\]', text)
     ar_m = re.search(r'\[AROUSAL: \+(.*?)\]', text)
-    if hp_m: gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
-    if ar_m: gs['arousal'] += int(ar_m.group(1))if prompt := st.chat_input("Command Amara..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    
+    if hp_m: 
+        gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
+    
+    if ar_m: 
+        gs['arousal'] += int(ar_m.group(1))
+        if gs['arousal'] >= 100:
+            gs['arousal'] = 0
+            gs['orgasm_count'] += 1
 
         with st.chat_message("assistant"):
             res_box = st.empty()
