@@ -143,7 +143,19 @@ def parse_logic(text):
         'arousal': r'\[AROUSAL: \+(\d+)\]',
         'mod': r'\[MOD: (\w+) ([+-]\d+)\]'
     }
-
+    
+    # Condition Logic: [CONDITION: Name | Impact] or [REMOVE CONDITION: Name]
+    new_cond = re.search(r'\[CONDITION: (.*?) \| (.*?)\]', text)
+    rem_cond = re.search(r'\[REMOVE CONDITION: (.*?)\]', text)
+    
+    if new_cond:
+        gs['conditions'][new_cond.group(1)] = new_cond.group(2)
+        st.toast(f"New Condition: {new_cond.group(1)}", icon="🩹")
+        
+    if rem_cond:
+        gs['conditions'].pop(rem_cond.group(1), None)
+        st.toast(f"Recovered: {rem_cond.group(1)}", icon="✨")
+        
     # Process Mods (DEX -3, STR +2, etc)
     for mod in re.finditer(patterns['mod'], text):
         attr, val = mod.group(1), int(mod.group(2))
@@ -215,18 +227,20 @@ with st.sidebar:
     # Custom CSS for Double-Height Progress Bars and Colors
     st.markdown("""
         <style>
-            /* The Core Fix: Absolute targeting of progress bars */
-            div[data-testid="stSidebar"] .stProgress div[role="progressbar"] > div { height: 30px !important; }
+            /* COMPACT SIDEBAR FIX */
+            [data-testid="stSidebar"] { width: 300px !important; }
+            .stProgress > div > div > div > div { height: 24px !important; } /* Slimmer bars */
             
-            /* Target by color sequence in sidebar */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[role="progressbar"] > div { background: #ff4b4b !important; } /* HP */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[role="progressbar"] > div { background: #28a745 !important; } /* Stamina */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[role="progressbar"] > div { background: #007bff !important; } /* Mana */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[role="progressbar"] > div { background: #fd7e14 !important; } /* Favor */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[role="progressbar"] > div { background: #e83e8c !important; } /* Arousal */
+            /* FORCE COLORS - TARGETING INTERNAL WRAPPERS */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #ff4b4b !important; } /* HP */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #28a745 !important; } /* Stamina */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #007bff !important; } /* Mana */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #fd7e14 !important; } /* Favor */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[data-testid="stWidgetLabel"] + div > div > div { background-color: #e83e8c !important; } /* Arousal */
             
-            [data-testid="stMetricValue"] { font-size: 1rem !important; }
-            [data-testid="stMetricLabel"] { font-size: 0.7rem !important; }
+            /* Compact Metrics */
+            [data-testid="stMetricValue"] { font-size: 0.9rem !important; }
+            [data-testid="stMetricLabel"] { font-size: 0.65rem !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -330,25 +344,39 @@ with tab_console:
     # We use session state to "stage" a command from the dropdowns
     if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    # 2. Command Prep Area
+    st.write("---")
+    # Top Row: Selectors
+    sel_col1, sel_col2 = st.columns(2)
+    with sel_col1:
         skills = list(SKILL_MAP.keys())
-        sel_skill = st.selectbox("Maneuvers", skills, label_visibility="collapsed")
-        if st.button("💪 Prep Maneuver", use_container_width=True):
-            st.session_state.cmd_buffer = f"I perform a {sel_skill} maneuver "
-            
-    with col2:
-        spells = st.session_state.game_state['known_spells']
-        sel_spell = st.selectbox("Spells", spells, label_visibility="collapsed")
-        if st.button("✨ Prep Spell", use_container_width=True):
-            st.session_state.cmd_buffer = f"I cast {sel_spell} at "
+        selected_skill = st.selectbox("Maneuver Select", skills, label_visibility="collapsed")
+    with sel_col2:
+        spells = gs['known_spells']
+        selected_spell = st.selectbox("Spell Select", spells, label_visibility="collapsed")
 
-    with col3:
-        # This text area is where the buffered text appears for the user to finish
-        final_input = st.text_input("Final Command", 
-                                    value=st.session_state.cmd_buffer, 
-                                    placeholder="Add target or detail...",
-                                    label_visibility="collapsed")
+    # Middle Row: The Action Input
+    if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
+    user_input = st.text_input("Action Input", value=st.session_state.cmd_buffer, placeholder="Staged command or impromptu action...", label_visibility="collapsed")
+
+    # Bottom Row: The Three Flush Buttons
+    btn_col1, btn_col2, btn_col3 = st.columns(3)
+    with btn_col1:
+        if st.button("💪 Use Maneuver", use_container_width=True):
+            st.session_state.cmd_buffer = f"I use my {selected_skill} maneuver on "
+            st.rerun()
+    with btn_col2:
+        if st.button("✨ Use Spell", use_container_width=True):
+            st.session_state.cmd_buffer = f"I cast {selected_spell} at "
+            st.rerun()
+    with btn_col3:
+        if st.button("🚀 Impromptu", use_container_width=True):
+            # This button acts as the final "Execute"
+            if user_input:
+                st.session_state.messages.append({"role": "user", "content": user_input})
+                st.session_state.cmd_buffer = "" # Clear buffer
+                # Trigger Gemini logic here...
+                st.rerun()
         
     if st.button("🚀 EXECUTE ACTION", use_container_width=True):
         if final_input:
@@ -388,6 +416,23 @@ with tab_lore:
     st.success(f"**Quest:** {l['Main Quest']['Current Objective']} ({l['Main Quest']['Bastion Shards']}/7 Shards)")
     st.write("### Known Locations", l['Locations'])
     st.write("### Persons of Interest", l['NPCs'])
+
+if 'conditions' not in st.session_state.game_state:
+    st.session_state.game_state['conditions'] = {
+        "Vexal Active": "-2 to all Attributes (Distracted)",
+        "Knight-Commander Pride": "+1 to CHA (Status)"
+    }
+
+with tab_status:
+    st.subheader("🩸 Current Status & Conditions")
+    if not st.session_state.game_state['conditions']:
+        st.write("Amara is currently free of any major ailments.")
+    else:
+        for condition, impact in st.session_state.game_state['conditions'].items():
+            with st.container(border=True):
+                c1, c2 = st.columns([1, 2])
+                c1.markdown(f"**{condition}**")
+                c2.caption(impact)
 
 with tab_sett:
     with st.expander("💾 Memory Management"):
