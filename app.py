@@ -101,8 +101,11 @@ def speak(text, label=""):
         audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3, speaking_rate=target_speed, pitch=target_pitch)
         response = client_tts.synthesize_speech(input=input_tts, voice=voice, audio_config=audio_config)
         b64 = base64.b64encode(response.audio_content).decode("utf-8")
-        st.markdown(f'<audio autoplay src="data:audio/mp3;base64,{b64}" id="aud_{st.session_state.audio_id}_{label}">', unsafe_allow_html=True)
-    except Exception as e: st.error(f"Voice Error: {e}")
+        
+        # We removed 'autoplay' and added the class 'vexal-audio'
+        st.markdown(f'<audio class="vexal-audio" src="data:audio/mp3;base64,{b64}" id="aud_{st.session_state.audio_id}_{label}"></audio>', unsafe_allow_html=True)
+    except Exception as e: 
+        st.error(f"Voice Error: {e}")
 
 def parse_logic(text):
     gs = st.session_state.game_state
@@ -131,6 +134,28 @@ tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
 with tab_console:
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
+            
+    st.components.v1.html("""
+        <script>
+        function playNext(index) {
+            const audios = window.parent.document.querySelectorAll('.vexal-audio');
+            if (index < audios.length) {
+                audios[index].play();
+                audios[index].onended = () => playNext(index + 1);
+            }
+        }
+        // Check for new audio every second and start if nothing is playing
+        setInterval(() => {
+            const audios = window.parent.document.querySelectorAll('.vexal-audio');
+            const isPlaying = Array.from(audios).some(a => !a.paused);
+            if (!isPlaying && audios.length > 0) {
+                // Find the first audio that hasn't played yet (optional improvement)
+                // For now, let's just trigger the sequence
+                playNext(0); 
+            }
+        }, 1000);
+        </script>
+    """, height=0)
     
     if prompt := st.chat_input("Command Amara..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
