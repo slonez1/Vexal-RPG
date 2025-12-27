@@ -69,8 +69,8 @@ if prompt := st.chat_input("What is your next move?"):
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         full_response = ""
-        audio_triggered = False  # Track if we've started the voice yet
         
+        # Stream the saga
         stream = client_gemini.models.generate_content_stream(
             model="gemini-1.5-flash",
             contents=prompt
@@ -79,15 +79,21 @@ if prompt := st.chat_input("What is your next move?"):
         for chunk in stream:
             full_response += chunk.text
             response_placeholder.markdown(full_response + "▌")
-            
-            # FAST TRIGGER: Start audio once we have ~3 paragraphs (approx 1000 chars)
-            if not audio_triggered and len(full_response) > 1000:
-                audio_triggered = True
-                with st.spinner("Vexal voice manifesting..."):
-                    audio_html = get_audio_html(full_response) # Narrates the "Intro"
-                    st.markdown(audio_html, unsafe_allow_html=True)
         
         response_placeholder.markdown(full_response)
+        
+        # --- AUTOMATIC TWO-PART NARRATION ---
+        with st.status("The Vexal is speaking..."):
+            # Part 1: First 4500 characters
+            part_1 = full_response[:4500]
+            get_audio_html(part_1, "Part I")
+            
+            # Part 2: The rest (if it exists)
+            if len(full_response) > 4500:
+                part_2 = full_response[4500:9000]
+                get_audio_html(part_2, "Part II")
+
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
         
         # If the story was very short, trigger audio at the end
         if not audio_triggered:
