@@ -67,7 +67,7 @@ if prompt := st.chat_input("What is your next move?"):
         
         # Stream the 1200-word saga
         stream = client_gemini.models.generate_content_stream(
-            model="gemini-1.5-flash,
+            model= "gemini-1.5-flash,
             contents=prompt,
             config={"max_output_tokens": 2000} # Allows for those long 1200-word responses
         )
