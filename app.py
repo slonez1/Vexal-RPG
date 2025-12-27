@@ -11,7 +11,6 @@ from google.oauth2 import service_account
 # --- 1. CONFIGURATION & INITIALIZATION ---
 st.set_page_config(page_title="Vexal Engine", layout="wide", initial_sidebar_state="expanded")
 
-# Authentication & Clients
 @st.cache_resource
 def init_clients():
     try:
@@ -51,7 +50,7 @@ You MUST trigger the following tags to update the Player's UI:
    - [NEW OBJECTIVE: Short summary of next goal]
 """
 
-# --- 3. SESSION STATE (The Cabinet) ---
+# --- 3. SESSION STATE ---
 if "game_state" not in st.session_state:
     st.session_state.game_state = {
         'name': 'Amara Silvermoon', 'level': 10,
@@ -89,64 +88,56 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "audio_id" not in st.session_state: st.session_state.audio_id = 0
 
 # --- 4. ENGINE FUNCTIONS ---
-# --- 4. REFINED VEXAL VOICE ENGINE (Zephyr Only) ---
 def speak(text, label=""):
-    if not st.session_state.get("audio_enabled", True):
-        return
-        
+    if not st.session_state.get("audio_enabled", True): return
     try:
-        # TWEAK THESE THREE VALUES BASED ON YOUR DEMO FINDINGS:
-        target_voice = "en-US-Neural2-F" # High-end intimate voice
-        target_speed = 0.96              # Closer to 1.0 is more natural
-        target_pitch = -1.5              # Lower is more resonant
-        
+        target_voice = "en-US-Neural2-F" 
+        target_speed = 0.96              
+        target_pitch = -1.5              
         clean = re.sub(r'\[.*?\]|<.*?>|\*|_|#', '', text).strip()[:4800]
-        
-        # Wrapping in SSML to force a "soft" delivery
         ssml_text = f"<speak><prosody volume='soft'>{clean}</prosody></speak>"
-        
         input_tts = texttospeech.SynthesisInput(ssml=ssml_text)
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="en-US", 
-            name=target_voice
-        )
-        
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=target_speed,
-            pitch=target_pitch
-        )
-        
-        response = client_tts.synthesize_speech(
-            input=input_tts, 
-            voice=voice, 
-            audio_config=audio_config
-        )
-        
+        voice = texttospeech.VoiceSelectionParams(language_code="en-US", name=target_voice)
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3, speaking_rate=target_speed, pitch=target_pitch)
+        response = client_tts.synthesize_speech(input=input_tts, voice=voice, audio_config=audio_config)
         b64 = base64.b64encode(response.audio_content).decode("utf-8")
         st.markdown(f'<audio autoplay src="data:audio/mp3;base64,{b64}" id="aud_{st.session_state.audio_id}_{label}">', unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Voice Error: {e}")
+    except Exception as e: st.error(f"Voice Error: {e}")
 
 def parse_logic(text):
     gs = st.session_state.game_state
-    # Combat/Vaxel
-   hp_m = re.search(r'\[PLAYER DAMAGE: (.*?)\]', text)
+    hp_m = re.search(r'\[PLAYER DAMAGE: (.*?)\]', text)
     ar_m = re.search(r'\[AROUSAL: \+(.*?)\]', text)
-    
-    if hp_m: 
-        gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
-    
+    if hp_m: gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
     if ar_m: 
         gs['arousal'] += int(ar_m.group(1))
         if gs['arousal'] >= 100:
             gs['arousal'] = 0
             gs['orgasm_count'] += 1
 
+# --- 5. SIDEBAR ---
+with st.sidebar:
+    st.markdown("## 🛡️ Vitals")
+    gs = st.session_state.game_state
+    st.progress(gs['hp']/gs['hp_max'], text=f"HP: {gs['hp']}/{gs['hp_max']}")
+    st.progress(gs['arousal']/100, text=f"Arousal: {gs['arousal']}%")
+    st.write(f"**Location:** {gs['location']}")
+
+# --- 6. THE UI TABS ---
+tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
+    "📜 CONSOLE", "👤 CHARACTER", "🎒 INVENTORY", "📖 LORE", "⚙️ SETTINGS"
+])
+
+with tab_console:
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+    
+    if prompt := st.chat_input("Command Amara..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"): st.markdown(prompt)
+            
         with st.chat_message("assistant"):
-            res_box = st.empty()
-            full_text = ""
-            last_spoken_idx = 0  # Tracks where the voice is at
+            res_box, full_text, last_spoken_idx = st.empty(), "", 0
             st.session_state.audio_id += 1 
 
             stream = client_gemini.models.generate_content_stream(
@@ -159,28 +150,22 @@ def parse_logic(text):
                 full_text += chunk.text
                 res_box.markdown(full_text + "▌")
                 
-                # AUDIO CHUNKING LOGIC:
-                # If we have at least 500 new characters AND the AI just finished a sentence...
                 current_unspoken = full_text[last_spoken_idx:]
                 if len(current_unspoken) > 500 and any(p in current_unspoken for p in [". ", "! ", "? ", "\n"]):
-                    # Find the last sentence end to keep the narration natural
                     break_point = max(current_unspoken.rfind(p) for p in [". ", "! ", "? ", "\n"]) + 1
-                    chunk_to_speak = current_unspoken[:break_point]
-                    
-                    speak(chunk_to_speak, label=f"chunk_{last_spoken_idx}")
+                    speak(current_unspoken[:break_point], label=f"chunk_{last_spoken_idx}")
                     last_spoken_idx += break_point
             
-            # Finalize: Speak any remaining text that didn't hit the 500 char limit
             res_box.markdown(full_text)
-            remaining_text = full_text[last_spoken_idx:]
-            if len(remaining_text.strip()) > 5:
-                speak(remaining_text, label="final")
-                
+            if len(full_text[last_spoken_idx:].strip()) > 5:
+                speak(full_text[last_spoken_idx:], label="final")
+            
             parse_logic(full_text)
             st.session_state.messages.append({"role": "assistant", "content": full_text})
 
 with tab_char:
     st.header("Proficiencies")
+    gs = st.session_state.game_state # Ensure gs is local to the tab
     for cat, skills in gs['skills'].items():
         with st.expander(cat):
             for s, r in skills.items(): st.progress(r/20, text=f"{s}: Rank {r}")
@@ -205,37 +190,22 @@ with tab_lore:
 
 with tab_sett:
     st.header("⚙️ Vexal System Settings")
-    
-    # --- AUDIO BLOCK ---
     with st.expander("🔊 Audio & Narrator Settings", expanded=True):
         st.session_state.audio_enabled = st.toggle("Voice Narration Active", value=True)
-        st.session_state.narrator = st.radio(
-            "Narrator Persona", 
-            ["Zephyr", "Kore", "Charon"], 
-            horizontal=True,
-            help="Zephyr: Intimate/Breathy | Kore: Clear/Direct | Charon: Deep/Ancient"
-        )
         if st.button("🔄 Restart Audio Engine"):
             st.session_state.audio_id += 1
             st.rerun()
 
-    # --- SAVE/LOAD BLOCK ---
     with st.expander("💾 Memory Management"):
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            st.download_button(
-                "📥 Export Save (.json)",
-                json.dumps(st.session_state.game_state),
-                file_name="vexal_chronicle.json",
-                use_container_width=True
-            )
+            st.download_button("📥 Export Save (.json)", json.dumps(st.session_state.game_state), file_name="vexal_chronicle.json", use_container_width=True)
         with col_s2:
             uploaded = st.file_uploader("📂 Import Save", type="json")
             if uploaded:
                 st.session_state.game_state = json.load(uploaded)
                 st.success("State Uploaded! Click 'Reboot' to apply.")
 
-    # --- RESET ---
     st.divider()
     if st.button("🔥 WIPE SYSTEM (Hard Reset)", type="primary"):
         st.session_state.clear()
