@@ -10,7 +10,7 @@ st.set_page_config(page_title="Vexal RPG", layout="wide")
 
 # Setup Gemini (Stable Library)
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-flash-latest')
 
 # Setup Text-to-Speech
 gcp_info = st.secrets["gcp_service_account"]
