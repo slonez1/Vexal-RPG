@@ -37,7 +37,18 @@ MAT_PROPS = {
 
 SYSTEM_RULES = r"""
 'You are a "Perfectionist" GM narrating an extremely uncensored dark fantasy RPG.'
-[... INCLUDE YOUR FULL 7-PARAGRAPH SYSTEM RULES HERE ...]
+[... INCLUDE YOUR FULL 7-PARAGRAPH SYSTEM RULES HERE
+### [GM MECHANICAL TAGGING RULES]
+Update the UI using these EXACT tags:
+- Damage: [PLAYER DAMAGE: 15]
+- Healing: [HP REGEN: +20]
+- Stamina Use/Gain: [STAMINA: -10] or [STAMINA: +5]
+- Mana Use/Gain: [MANA: -20] or [MANA: +10]
+- Divine Favor: [DIVINE FAVOR: -5] or [DIVINE FAVOR: +5]
+- Vaxel: [AROUSAL: +15]
+- Discovery: [NEW NPC: Name | Bio], [LOCATION: Name | Desc]
+
+...]
 
 ### [GM MECHANICAL TAGGING RULES]
 You MUST trigger the following tags to update the Player's UI:
@@ -105,14 +116,45 @@ def speak(text, label=""):
 
 def parse_logic(text):
     gs = st.session_state.game_state
-    hp_m = re.search(r'\[PLAYER DAMAGE: (\d+)\]', text)
-    ar_m = re.search(r'\[AROUSAL: \+(\d+)\]', text)
-    if hp_m: gs['hp'] = max(0, gs['hp'] - int(hp_m.group(1)))
-    if ar_m: 
-        gs['arousal'] += int(ar_m.group(1))
+    
+    # Define patterns for all vitals
+    patterns = {
+        'hp': r'\[PLAYER DAMAGE: (\d+)\]',
+        'hp_gain': r'\[HP REGEN: \+(\d+)\]',
+        'stamina': r'\[STAMINA: ([+-]\d+)\]',
+        'mana': r'\[MANA: ([+-]\d+)\]',
+        'favor': r'\[DIVINE FAVOR: ([+-]\d+)\]',
+        'arousal': r'\[AROUSAL: \+(\d+)\]'
+    }
+
+    # 1. HP Processing (Damage or Heal)
+    dmg = re.search(patterns['hp'], text)
+    heal = re.search(patterns['hp_gain'], text)
+    if dmg: gs['hp'] = max(0, gs['hp'] - int(dmg.group(1)))
+    if heal: gs['hp'] = min(gs['hp_max'], gs['hp'] + int(heal.group(1)))
+
+    # 2. Stamina Processing
+    sta = re.search(patterns['stamina'], text)
+    if sta: gs['stamina'] = max(0, min(gs['stamina_max'], gs['stamina'] + int(sta.group(1))))
+
+    # 3. Mana Processing
+    mna = re.search(patterns['mana'], text)
+    if mna: gs['mana'] = max(0, min(gs['mana_max'], gs['mana'] + int(mna.group(1))))
+
+    # 4. Divine Favor Processing
+    fav = re.search(patterns['favor'], text)
+    if fav: gs['divine_favor'] = max(0, min(100, gs['divine_favor'] + int(fav.group(1))))
+
+    # 5. Arousal & Orgasms
+    aro = re.search(patterns['arousal'], text)
+    if aro:
+        val = int(aro.group(1))
+        gs['arousal'] += val
         if gs['arousal'] >= 100:
             gs['arousal'] = 0
             gs['orgasm_count'] = min(10, gs['orgasm_count'] + 1)
+            # Add a visual flag for the orgasm event
+            st.toast("⚠️ VAXEL OVERLOAD: Subjugation Box Filled!", icon="🔥")
 
 # --- 5. SIDEBAR ---
 with st.sidebar:
@@ -268,6 +310,21 @@ with tab_console:
                 parse_logic(full_text)
                 st.session_state.messages.append({"role": "assistant", "content": full_text})
                 st.rerun()
+    with col1:
+        all_skills = [s for cat in gs['skills'].values() for s in cat.keys()]
+        selected_skill = st.selectbox("Skills", all_skills, label_visibility="collapsed")
+        if st.button("💪 Roll Skill", use_container_width=True):
+            pending_action = f"I use my {selected_skill} skill."
+            
+    with col2:
+        selected_spell = st.selectbox("Spells", gs['known_spells'], label_visibility="collapsed")
+        if st.button("✨ Cast", use_container_width=True):
+            pending_action = f"I cast {selected_spell}."
+            
+    with col3:
+        impromp = st.text_input("Impromptu...", label_visibility="collapsed", placeholder="Scream, hide, etc...")
+        if st.button("💥 Execute", use_container_width=True):
+            pending_action = impromp
 
 with tab_char:
     st.header("Proficiencies")
@@ -276,6 +333,14 @@ with tab_char:
             for s, r in skills.items(): st.progress(r/20, text=f"{s}: Rank {r}")
     st.subheader("Spellbook")
     for s in gs['known_spells']: st.info(f"✨ {s} (Cost: {gs['mana_costs'].get(s, 0)} MP)")
+    st.divider()
+    st.subheader("📊 Recent Vital Changes")
+    # This creates a small scrolling log of the last few messages' impact
+    for msg in st.session_state.messages[-3:]:
+        if "[" in msg['content'] and "]" in msg['content']:
+            tags = re.findall(r'\[.*?\]', msg['content'])
+            if tags:
+                st.caption(f"Last Turn Impacts: {', '.join(tags)}")
 
 with tab_inv:
     st.subheader("🛡️ Equipped")
