@@ -58,23 +58,31 @@ if prompt := st.chat_input("What do you do?"):
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
         full_response = ""
+        audio_started = False
         
-        # This is the most stable streaming method available
+        # Start streaming the text
         response = model.generate_content(prompt, stream=True)
         
         for chunk in response:
             full_response += chunk.text
             response_placeholder.markdown(full_response + "▌")
+            
+            # TRIGGER AUDIO EARLY: When we have ~1 paragraph and haven't started yet
+            if not audio_started and len(full_response) > 700:
+                audio_started = True
+                # We use a placeholder so the audio doesn't "jump" the scroll
+                with st.sidebar: 
+                    st.write("🎙️ *Vexal is beginning to speak...*")
+                    # We send just the first chunk for immediate playback
+                    get_audio_html(full_response, "Part I")
         
         response_placeholder.markdown(full_response)
         
-        # Automatic Audio
-        with st.spinner("Vexal voice manifesting..."):
-            if len(full_response) > 4800:
-                mid = full_response.rfind('.', 0, 4800) + 1
-                get_audio_html(full_response[:mid], "Part I")
-                get_audio_html(full_response[mid:], "Part II")
-            else:
-                get_audio_html(full_response, "Full Narration")
+        # After text finishes, check if we need to send the second half
+        if len(full_response) > 4800:
+            mid = full_response.rfind('.', 0, 4800) + 1
+            get_audio_html(full_response[mid:], "Part II")
+        elif not audio_started: # For very short responses
+            get_audio_html(full_response, "Full Narration")
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})
