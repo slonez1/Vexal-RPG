@@ -90,18 +90,44 @@ if "audio_id" not in st.session_state: st.session_state.audio_id = 0
 
 # --- 4. ENGINE FUNCTIONS ---
 def speak(text, label=""):
+    if not st.session_state.get("audio_enabled", True):
+        return
+        
     try:
         clean = re.sub(r'\[.*?\]|<.*?>|\*|_|#', '', text).strip()[:4800]
-        v_map = {"Zephyr": "en-US-Chirp3-HD-Zephyr", "Kore": "en-US-Chirp3-HD-Kore", "Charon": "en-US-Chirp3-HD-Charon"}
+        v_map = {
+            "Zephyr": "en-US-Chirp3-HD-Zephyr", 
+            "Kore": "en-US-Chirp3-HD-Kore", 
+            "Charon": "en-US-Chirp3-HD-Charon"
+        }
         v_choice = st.session_state.get("narrator", "Zephyr")
-        input_tts = texttospeech.TextToSpeechClient().synthesize_speech(
-            input=texttospeech.SynthesisInput(text=clean),
-            voice=texttospeech.VoiceSelectionParams(language_code="en-US", name=v_map[v_choice]),
-            audio_config=texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+        
+        input_tts = texttospeech.SynthesisInput(text=clean)
+        
+        # TUNING FOR "BREATHY" QUALITY:
+        # Lowering pitch and slightly slowing rate often removes the 'twang' 
+        # and adds intimacy to the Journey/Chirp voices.
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="en-US", 
+            name=v_map[v_choice]
         )
-        b64 = base64.b64encode(input_tts.audio_content).decode("utf-8")
+        
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3,
+            speaking_rate=0.90,  # Slightly slower for "breathy" pacing
+            pitch=-2.0           # Slightly lower for a richer, more intimate tone
+        )
+        
+        response = client_tts.synthesize_speech(
+            input=input_tts, 
+            voice=voice, 
+            audio_config=audio_config
+        )
+        
+        b64 = base64.b64encode(response.audio_content).decode("utf-8")
         st.markdown(f'<audio autoplay src="data:audio/mp3;base64,{b64}" id="aud_{st.session_state.audio_id}_{label}">', unsafe_allow_html=True)
-    except: pass
+    except Exception as e:
+        st.error(f"Voice Error: {e}")
 
 def parse_logic(text):
     gs = st.session_state.game_state
@@ -187,8 +213,60 @@ with tab_lore:
     st.write("### Persons of Interest", l['NPCs'])
 
 with tab_sett:
-    if st.button("💾 Download Save"):
-        st.download_button("Save JSON", json.dumps(gs), "save.json")
-    if st.button("🔥 RESET GAME", type="primary"):
+    st.header("⚙️ System Control")
+    
+    # --- AUDIO CONTROLS ---
+    st.subheader("🔊 Audio Configuration")
+    col_a1, col_a2 = st.columns(2)
+    
+    with col_a1:
+        st.session_state.audio_enabled = st.toggle("Enable Voice Narration", value=True)
+        st.session_state.narrator = st.selectbox(
+            "Select Voice Personality:", 
+            ["Zephyr", "Kore", "Charon"],
+            index=0
+        )
+        
+    with col_a2:
+        if st.button("🎵 Reset Audio Engine", use_container_width=True):
+            st.session_state.audio_id += 1
+            speak("Voice systems recalibrated.")
+            st.success("Audio context refreshed.")
+
+    st.divider()
+
+    # --- DATA MANAGEMENT ---
+    st.subheader("💾 Save & Load")
+    col_s1, col_s2 = st.columns(2)
+    
+    with col_s1:
+        # SAVE GAME
+        save_data = json.dumps(st.session_state.game_state, indent=4)
+        st.download_button(
+            label="📥 Download Save File",
+            data=save_data,
+            file_name=f"vaxel_save_{int(time.time())}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+        
+    with col_s2:
+        # LOAD GAME
+        uploaded_file = st.file_uploader("📂 Upload Save File", type="json")
+        if uploaded_file is not None:
+            try:
+                loaded_state = json.load(uploaded_file)
+                st.session_state.game_state = loaded_state
+                st.success("Game State Loaded!")
+                if st.button("Apply Changes"):
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Load Error: {e}")
+
+    st.divider()
+
+    # --- SYSTEM ---
+    st.subheader("⚠️ Danger Zone")
+    if st.button("🔥 FULL SYSTEM RESET", type="primary", use_container_width=True):
         st.session_state.clear()
         st.rerun()
