@@ -180,7 +180,7 @@ tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
 
 
     # JavaScript Coordinator for Audio
-    st.components.v1.html("""
+st.components.v1.html("""
         <script>
         function playNext(index) {
             const audios = window.parent.document.querySelectorAll('.vexal-audio');
