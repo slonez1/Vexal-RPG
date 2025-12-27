@@ -8,6 +8,22 @@ from google.genai import types
 from google.cloud import texttospeech
 from google.oauth2 import service_account
 
+# --- 1. DATA CONSTANTS ---
+SKILL_MAP = {
+    "One-Handed": "STR", "Two-Handed": "STR", "Bladed": "DEX", "Blunt": "STR",
+    "Daggers": "DEX", "Axes": "STR", "Polearms": "STR", "Marksmanship": "DEX",
+    "Blocking": "STR", "Heavy Armor": "CON", "Light Armor": "DEX", "Unarmed": "STR",
+    "Holy": "WIS", "Arcane": "INT", "Elemental": "INT", "Illusion": "CHA",
+    "Death": "INT", "Blood": "CHA", "Restoration": "WIS", "Void Navigation": "INT",
+    "Stealth": "DEX", "Lockpicking": "DEX", "Pickpocket": "DEX",
+    "Poisoning": "INT", "Trap Disarming": "DEX", "Shadow-Stitch": "INT",
+    "Alchemy": "INT", "Blacksmithing": "STR", "Enchanting": "INT", "Survival": "WIS",
+    "Athletics": "STR", "Acrobatics": "DEX", "Anatomy": "INT", "Tinkering": "INT",
+    "Cooking": "WIS", "Leatherworking": "DEX",
+    "Persuasion": "CHA", "Intimidation": "CHA", "Deception": "CHA",
+    "Insight": "WIS", "Performance": "CHA", "Etiquette": "CHA", "Bartering": "CHA"
+}
+
 # --- 1. CONFIGURATION & INITIALIZATION ---
 st.set_page_config(page_title="Vexal Engine", layout="wide", initial_sidebar_state="expanded")
 
@@ -117,15 +133,50 @@ def speak(text, label=""):
 def parse_logic(text):
     gs = st.session_state.game_state
     
-    # Define patterns for all vitals
+    # --- Vitals Patterns ---
     patterns = {
         'hp': r'\[PLAYER DAMAGE: (\d+)\]',
-        'hp_gain': r'\[HP REGEN: \+(\d+)\]',
+        'hp_regen': r'\[HP REGEN: \+(\d+)\]',
         'stamina': r'\[STAMINA: ([+-]\d+)\]',
         'mana': r'\[MANA: ([+-]\d+)\]',
         'favor': r'\[DIVINE FAVOR: ([+-]\d+)\]',
-        'arousal': r'\[AROUSAL: \+(\d+)\]'
+        'arousal': r'\[AROUSAL: \+(\d+)\]',
+        'mod': r'\[MOD: (\w+) ([+-]\d+)\]'
     }
+
+    # Process Mods (DEX -3, STR +2, etc)
+    for mod in re.finditer(patterns['mod'], text):
+        attr, val = mod.group(1), int(mod.group(2))
+        if attr in gs['attributes']:
+            gs['attributes'][attr] += val
+            st.toast(f"Stat Changed: {attr} {val}", icon="⚠️")
+
+    # Process Vitals
+    hp_d = re.search(patterns['hp'], text)
+    hp_r = re.search(patterns['hp_regen'], text)
+    if hp_d: gs['hp'] = max(0, gs['hp'] - int(hp_d.group(1)))
+    if hp_r: gs['hp'] = min(gs['hp_max'], gs['hp'] + int(hp_r.group(1)))
+
+    sta = re.search(patterns['stamina'], text)
+    if sta: gs['stamina'] = max(0, min(gs['stamina_max'], gs['stamina'] + int(sta.group(1))))
+
+    mna = re.search(patterns['mana'], text)
+    if mna: gs['mana'] = max(0, min(gs['mana_max'], gs['mana'] + int(mna.group(1))))
+
+    fav = re.search(patterns['favor'], text)
+    if fav: gs['divine_favor'] = max(0, 100, gs['divine_favor'] + int(fav.group(1)))
+
+    # Vaxel / Subjugation Logic
+    aro = re.search(patterns['arousal'], text)
+    if aro:
+        gs['arousal'] += int(aro.group(1))
+        if gs['arousal'] >= 100:
+            gs['arousal'] = 0
+            gs['orgasm_count'] += 1
+            st.toast("Subjugation Peak Incremented", icon="🔥")
+            if gs['orgasm_count'] >= 10:
+                gs['vaxel_state'] = "NEURAL OVERLOAD (UNCONSCIOUS)"
+                st.error("SYSTEM CRITICAL: Amara has succumbed to Neural Overload.")
 
     # 1. HP Processing (Damage or Heal)
     dmg = re.search(patterns['hp'], text)
@@ -164,6 +215,11 @@ with st.sidebar:
     # Custom CSS for Double-Height Progress Bars and Colors
     st.markdown("""
         <style>
+            /* The Core Fix: Absolute targeting of progress bars */
+            div[data-testid="stSidebar"] .stProgress div[role="progressbar"] > div { height: 30px !important; }
+            
+            /* Target
+            
             /* Double the height of all progress bars */
             .stProgress > div > div > div > div { 
                 height: 30px !important; 
@@ -233,21 +289,7 @@ with tab_console:
     col1, col2, col3 = st.columns(3)
     pending_action = None
     
-    with col1:
-        all_skills = [s for cat in gs['skills'].values() for s in cat.keys()]
-        selected_skill = st.selectbox("Skills", all_skills, label_visibility="collapsed")
-        if st.button("💪 Roll Skill", use_container_width=True):
-            pending_action = f"I use my {selected_skill} skill."
-            
-    with col2:
-        selected_spell = st.selectbox("Spells", gs['known_spells'], label_visibility="collapsed")
-        if st.button("✨ Cast", use_container_width=True):
-            pending_action = f"I cast {selected_spell}."
-            
-    with col3:
-        impromp = st.text_input("Impromptu...", label_visibility="collapsed", placeholder="Scream, hide, etc...")
-        if st.button("💥 Execute", use_container_width=True):
-            pending_action = impromp
+
 
     # Chat History Container
     chat_display = st.container(height=500)
