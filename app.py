@@ -91,6 +91,8 @@ if "audio_id" not in st.session_state: st.session_state.audio_id = 0
 def speak(text, label=""):
     if not st.session_state.get("audio_enabled", True): return
     try:
+        # We add a unique turn_id so JS knows which clips belong to the latest response
+        turn_id = len(st.session_state.messages) 
         target_voice = "en-US-Neural2-F" 
         target_speed = 0.96              
         target_pitch = -1.5              
@@ -102,10 +104,9 @@ def speak(text, label=""):
         response = client_tts.synthesize_speech(input=input_tts, voice=voice, audio_config=audio_config)
         b64 = base64.b64encode(response.audio_content).decode("utf-8")
         
-        # We removed 'autoplay' and added the class 'vexal-audio'
-        st.markdown(f'<audio class="vexal-audio" src="data:audio/mp3;base64,{b64}" id="aud_{st.session_state.audio_id}_{label}"></audio>', unsafe_allow_html=True)
-    except Exception as e: 
-        st.error(f"Voice Error: {e}")
+        # We use 'vexal-audio-current' to distinguish from previous turns
+        st.markdown(f'<audio class="vexal-audio-current" src="data:audio/mp3;base64,{b64}" id="aud_{turn_id}_{label}"></audio>', unsafe_allow_html=True)
+    except Exception as e: pass
 
 def parse_logic(text):
     gs = st.session_state.game_state
@@ -130,59 +131,53 @@ def parse_logic(text):
 
 # --- 5. SIDEBAR ---
 with st.sidebar:
-    gs = st.session_state.game_state
     st.title("🛡️ COMMAND")
-    
-    # --- VITALS ---
-    st.progress(gs['hp']/gs['hp_max'], text=f"❤️ HP: {gs['hp']}/{gs['hp_max']}")
-    st.progress(gs['stamina']/gs['stamina_max'], text=f"⚡ Stamina: {gs['stamina']}/{gs['stamina_max']}")
-    st.progress(gs['mana']/gs['mana_max'], text=f"✨ Mana: {gs['mana']}/{gs['mana_max']}")
-    
+    gs = st.session_state.game_state
+
+    # Custom CSS for Double-Height Progress Bars and Colors
+    st.markdown("""
+        <style>
+            .stProgress > div > div > div > div { height: 30px !important; }
+            /* Specific Colors */
+            div[data-testid="stv-hp"] .stProgress > div > div { background-color: #ff4b4b; }
+            div[data-testid="stv-stamina"] .stProgress > div > div { background-color: #28a745; }
+            div[data-testid="stv-mana"] .stProgress > div > div { background-color: #007bff; }
+            div[data-testid="stv-favor"] .stProgress > div > div { background-color: #fd7e14; }
+            div[data-testid="stv-arousal"] .stProgress > div > div { background-color: #e83e8c; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Vitals
+    st.container(border=True).markdown("### Vitals")
+    st.progress(gs['hp']/gs['hp_max'], text=f"❤️ HP: {gs['hp']}")
+    st.progress(gs['stamina']/gs['stamina_max'], text=f"⚡ Stamina: {gs['stamina']}")
+    st.progress(gs['mana']/gs['mana_max'], text=f"✨ Mana: {gs['mana']}")
     st.divider()
     st.progress(gs['divine_favor']/100, text=f"⚖️ Divine Favor: {gs['divine_favor']}%")
     
-    # --- THE VAXEL ---
+    # Attributes in a Fancy Container
+    with st.container(border=True):
+        st.markdown("<div style='text-align: center; font-weight: bold;'>ATTRIBUTES</div>", unsafe_allow_html=True)
+        a_cols = st.columns(3)
+        for i, (k, v) in enumerate(gs['attributes'].items()):
+            a_cols[i%3].metric(k, v)
+
+    # The Vaxel Section
     st.subheader("🔗 THE VAXEL")
-    state_colors = {"Active": "green", "Inactive": "gray", "Ruined": "red"}
-    st.markdown(f"**State:** :{state_colors.get(gs['vaxel_state'], 'gray')}[{gs['vaxel_state']}]")
-    
-    st.progress(gs['arousal']/100, text=f"Arousal: {gs['arousal']}%")
-    
-    # Subjugation Boxes (0-10)
+    st.progress(gs['arousal']/100, text=f"💓 Arousal: {gs['arousal']}%")
     boxes = "".join(["▣" if i < gs['orgasm_count'] else "▢" for i in range(10)])
     st.markdown(f"**Subjugation Peak:** `{boxes}`")
     
-    st.divider()
-    # RESTORING ATTRIBUTES
-    cols = st.columns(3)
-    attrs = list(gs['attributes'].items())
-    for i in range(len(attrs)):
-        cols[i % 3].metric(attrs[i][0], attrs[i][1])
+    # Bottom Sidebar Audio Control
+    st.write("---")
+    st.session_state.audio_enabled = st.toggle("🔊 Audio Master", value=st.session_state.get("audio_enabled", True))
 
 # --- 6. THE UI TABS ---
 tab_console, tab_char, tab_inv, tab_lore, tab_sett = st.tabs([
     "📜 CONSOLE", "👤 CHARACTER", "🎒 INVENTORY", "📖 LORE", "⚙️ SETTINGS"
 ])
 
-with tab_console:
-    # --- ACTION BAR ---
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        all_skills = [s for cat in gs['skills'].values() for s in cat.keys()]
-        selected_skill = st.selectbox("Use Skill", all_skills, label_visibility="collapsed")
-        if st.button("💪 Roll Skill", use_container_width=True):
-            st.session_state.pending_action = f"I use my {selected_skill} skill."
-            
-    with col2:
-        selected_spell = st.selectbox("Cast Spell", gs['known_spells'], label_visibility="collapsed")
-        if st.button("✨ Cast Spell", use_container_width=True):
-            st.session_state.pending_action = f"I cast {selected_spell}."
-            
-    with col3:
-        impromp = st.text_input("Impromptu...", label_visibility="collapsed", placeholder="Scream, hide, etc...")
-        if st.button("💥 Execute", use_container_width=True):
-            st.session_state.pending_action = impromp
+
 
     # JavaScript Coordinator for Audio
     st.components.v1.html("""
@@ -202,37 +197,6 @@ with tab_console:
         setInterval(() => playNext(0), 2000);
         </script>
     """, height=0)
-    
-    if prompt := st.chat_input("Command Amara..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
-            
-        with st.chat_message("assistant"):
-            res_box, full_text, last_spoken_idx = st.empty(), "", 0
-            st.session_state.audio_id += 1 
-
-            stream = client_gemini.models.generate_content_stream(
-                model="gemini-2.0-flash", 
-                contents=prompt, 
-                config=types.GenerateContentConfig(system_instruction=SYSTEM_RULES)
-            )
-            
-            for chunk in stream:
-                full_text += chunk.text
-                res_box.markdown(full_text + "▌")
-                
-                current_unspoken = full_text[last_spoken_idx:]
-                if len(current_unspoken) > 500 and any(p in current_unspoken for p in [". ", "! ", "? ", "\n"]):
-                    break_point = max(current_unspoken.rfind(p) for p in [". ", "! ", "? ", "\n"]) + 1
-                    speak(current_unspoken[:break_point], label=f"chunk_{last_spoken_idx}")
-                    last_spoken_idx += break_point
-            
-            res_box.markdown(full_text)
-            if len(full_text[last_spoken_idx:].strip()) > 5:
-                speak(full_text[last_spoken_idx:], label="final")
-            
-            parse_logic(full_text)
-            st.session_state.messages.append({"role": "assistant", "content": full_text})
 
 with tab_char:
     st.header("Proficiencies")
@@ -284,3 +248,54 @@ with tab_sett:
     if st.button("🔥 WIPE SYSTEM (Hard Reset)", type="primary"):
         st.session_state.clear()
         st.rerun()
+
+with tab_console:
+    # --- ACTION BAR ---
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        all_skills = [s for cat in gs['skills'].values() for s in cat.keys()]
+        selected_skill = st.selectbox("Use Skill", all_skills, label_visibility="collapsed")
+        if st.button("💪 Roll Skill", use_container_width=True):
+            st.session_state.pending_action = f"I use my {selected_skill} skill."
+            
+    with col2:
+        selected_spell = st.selectbox("Cast Spell", gs['known_spells'], label_visibility="collapsed")
+        if st.button("✨ Cast Spell", use_container_width=True):
+            st.session_state.pending_action = f"I cast {selected_spell}."
+            
+    with col3:
+        impromp = st.text_input("Impromptu...", label_visibility="collapsed", placeholder="Scream, hide, etc...")
+        if st.button("💥 Execute", use_container_width=True):
+            st.session_state.pending_action = impromp
+
+ if prompt := st.chat_input("Command Amara..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"): st.markdown(prompt)
+            
+        with st.chat_message("assistant"):
+            res_box, full_text, last_spoken_idx = st.empty(), "", 0
+            st.session_state.audio_id += 1 
+
+            stream = client_gemini.models.generate_content_stream(
+                model="gemini-2.0-flash", 
+                contents=prompt, 
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_RULES)
+            )
+            
+            for chunk in stream:
+                full_text += chunk.text
+                res_box.markdown(full_text + "▌")
+                
+                current_unspoken = full_text[last_spoken_idx:]
+                if len(current_unspoken) > 500 and any(p in current_unspoken for p in [". ", "! ", "? ", "\n"]):
+                    break_point = max(current_unspoken.rfind(p) for p in [". ", "! ", "? ", "\n"]) + 1
+                    speak(current_unspoken[:break_point], label=f"chunk_{last_spoken_idx}")
+                    last_spoken_idx += break_point
+            
+            res_box.markdown(full_text)
+            if len(full_text[last_spoken_idx:].strip()) > 5:
+                speak(full_text[last_spoken_idx:], label="final")
+            
+            parse_logic(full_text)
+            st.session_state.messages.append({"role": "assistant", "content": full_text})
