@@ -218,38 +218,15 @@ with st.sidebar:
             /* The Core Fix: Absolute targeting of progress bars */
             div[data-testid="stSidebar"] .stProgress div[role="progressbar"] > div { height: 30px !important; }
             
-            /* Target
+            /* Target by color sequence in sidebar */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[role="progressbar"] > div { background: #ff4b4b !important; } /* HP */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[role="progressbar"] > div { background: #28a745 !important; } /* Stamina */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[role="progressbar"] > div { background: #007bff !important; } /* Mana */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[role="progressbar"] > div { background: #fd7e14 !important; } /* Favor */
+            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[role="progressbar"] > div { background: #e83e8c !important; } /* Arousal */
             
-            /* Double the height of all progress bars */
-            .stProgress > div > div > div > div { 
-                height: 30px !important; 
-                border-radius: 5px !important; 
-            }
-
-            /* 1. HP - Red */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(1) div[role="progressbar"] > div {
-                background-color: #ff4b4b !important;
-            }
-            /* 2. Stamina - Green */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(2) div[role="progressbar"] > div {
-                background-color: #28a745 !important;
-            }
-            /* 3. Mana - Blue */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(3) div[role="progressbar"] > div {
-                background-color: #007bff !important;
-            }
-            /* 4. Divine Favor - Orange */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(4) div[role="progressbar"] > div {
-                background-color: #fd7e14 !important;
-            }
-            /* 5. Arousal - Pink */
-            div[data-testid="stSidebar"] [data-testid="stProgress"]:nth-of-type(5) div[role="progressbar"] > div {
-                background-color: #e83e8c !important;
-            }
-
-            /* Smaller Font for Metrics in Attributes */
-            [data-testid="stMetricLabel"] { font-size: 0.7rem !important; opacity: 0.8; }
-            [data-testid="stMetricValue"] { font-size: 1.0rem !important; font-weight: bold; }
+            [data-testid="stMetricValue"] { font-size: 1rem !important; }
+            [data-testid="stMetricLabel"] { font-size: 0.7rem !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -289,8 +266,6 @@ with tab_console:
     col1, col2, col3 = st.columns(3)
     pending_action = None
     
-
-
     # Chat History Container
     chat_display = st.container(height=500)
     with chat_display:
@@ -352,21 +327,34 @@ with tab_console:
                 parse_logic(full_text)
                 st.session_state.messages.append({"role": "assistant", "content": full_text})
                 st.rerun()
+    # We use session state to "stage" a command from the dropdowns
+    if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
+
+    col1, col2, col3 = st.columns(3)
     with col1:
-        all_skills = [s for cat in gs['skills'].values() for s in cat.keys()]
-        selected_skill = st.selectbox("Skills", all_skills, label_visibility="collapsed")
-        if st.button("💪 Roll Skill", use_container_width=True):
-            pending_action = f"I use my {selected_skill} skill."
+        skills = list(SKILL_MAP.keys())
+        sel_skill = st.selectbox("Maneuvers", skills, label_visibility="collapsed")
+        if st.button("💪 Prep Maneuver", use_container_width=True):
+            st.session_state.cmd_buffer = f"I perform a {sel_skill} maneuver "
             
     with col2:
-        selected_spell = st.selectbox("Spells", gs['known_spells'], label_visibility="collapsed")
-        if st.button("✨ Cast", use_container_width=True):
-            pending_action = f"I cast {selected_spell}."
-            
+        spells = st.session_state.game_state['known_spells']
+        sel_spell = st.selectbox("Spells", spells, label_visibility="collapsed")
+        if st.button("✨ Prep Spell", use_container_width=True):
+            st.session_state.cmd_buffer = f"I cast {sel_spell} at "
+
     with col3:
-        impromp = st.text_input("Impromptu...", label_visibility="collapsed", placeholder="Scream, hide, etc...")
-        if st.button("💥 Execute", use_container_width=True):
-            pending_action = impromp
+        # This text area is where the buffered text appears for the user to finish
+        final_input = st.text_input("Final Command", 
+                                    value=st.session_state.cmd_buffer, 
+                                    placeholder="Add target or detail...",
+                                    label_visibility="collapsed")
+        
+    if st.button("🚀 EXECUTE ACTION", use_container_width=True):
+        if final_input:
+            # Process the action through Gemini...
+            st.session_state.cmd_buffer = "" # Clear buffer after execution
+            # [Insert Gemini streaming and speak logic here]
 
 with tab_char:
     st.header("Proficiencies")
