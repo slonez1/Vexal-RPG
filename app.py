@@ -64,25 +64,25 @@ spell_cost_multiplier = stats['spell_cost_multiplier']
 movement_speed = stats['movement_speed']
 mana_regen = stats['mana_regen']
 
-cur_hp_m = gs['hp_max'] + p_mod + hp_max_penalty
-cur_sta_m = gs['stamina_max'] + p_mod
-cur_mana_m = gs['mana_max'] + p_mod
+cur_hp_m = gs.get('hp_max', 0) + p_mod + hp_max_penalty
+cur_sta_m = gs.get('stamina_max', 0) + p_mod
+cur_mana_m = gs.get('mana_max', 0) + p_mod
 
 # Apply stamina drain (preserve original behaviour)
-gs['stamina'] = max(0, gs['stamina'] - stamina_drain)
+gs['stamina'] = max(0, gs.get('stamina', 0) - stamina_drain)
 
 # --- SIDEBAR (IMMUTABLE) ---
 def _render_sidebar():
     with st.sidebar:
-        st.title(f"🛡️ {gs['name']}")
-        custom_bar("❤️ HEALTH", gs['hp'], cur_hp_m, "#ff4b4b")
-        custom_bar("⚡ STAMINA", gs['stamina'], cur_sta_m, "#28a745")
-        custom_bar("✨ MANA", gs['mana'], cur_mana_m, "#007bff")
+        st.title(f"🛡️ {gs.get('name', 'Unknown')}")
+        custom_bar("❤️ HEALTH", gs.get('hp', 0), cur_hp_m, "#ff4b4b")
+        custom_bar("⚡ STAMINA", gs.get('stamina', 0), cur_sta_m, "#28a745")
+        custom_bar("✨ MANA", gs.get('mana', 0), cur_mana_m, "#007bff")
         st.markdown("<hr style='border:1px solid #444;margin:15px 0;'>", unsafe_allow_html=True)
-        custom_bar("⚖️ DIVINE FAVOR", gs['divine_favor'], 100, "#fd7e14")
+        custom_bar("⚖️ DIVINE FAVOR", gs.get('divine_favor', 0), 100, "#fd7e14")
         
         # Active Conditions Display
-        if gs['conditions']:
+        if gs.get('conditions'):
             st.markdown("**Active Effects:**")
             for condition in gs['conditions'].keys():
                 if condition in CONDITION_EFFECTS:
@@ -93,16 +93,17 @@ def _render_sidebar():
         st.write("### Attributes")
         a_cols = st.columns(3)
         for i, (attr, base) in enumerate(gs['attributes'].items()):
-            val = eff_attr[attr]
+            val = eff_attr.get(attr, base)
             diff = val - base
             clr = "#ff4b4b" if diff < 0 else "#28a745" if diff > 0 else "#eee"
             sign = "+" if diff > 0 else ""
             a_cols[i%3].markdown(f"<div class='attr-box'><div class='attr-label'>{attr}</div><div class='attr-val' style='color:{clr};'>{val} ({sign}{diff})</div></div>", unsafe_allow_html=True)
         
         st.divider()
-        st.markdown(f"**Vaxel:** `{gs['vaxel_state']}`")
-        custom_bar("💓 AROUSAL", gs['arousal'], 100, "#e83e8c")
-        boxes = "".join(["▣" if i < gs['orgasm_count'] else "▢" for i in range(10)])
+        # Display the correctly-named key 'vexal_state' (safe-get)
+        st.markdown(f"**Vexal:** `{gs.get('vexal_state', gs.get('vaxel_state', 'Unknown'))}`")
+        custom_bar("💓 AROUSAL", gs.get('arousal', 0), 100, "#e83e8c")
+        boxes = "".join(["▣" if i < gs.get('orgasm_count', 0) else "▢" for i in range(10)])
         st.markdown(f"**Subjugation Peak:** <span style='color:#e83e8c;'>{boxes}</span>", unsafe_allow_html=True)
         
         # Movement Speed Indicator
@@ -119,7 +120,7 @@ tab_con, tab_stat, tab_char, tab_inv, tab_sett = st.tabs(["📜 CONSOLE", "🩹 
 with tab_stat:
     # 1. Condition Overview
     st.subheader("🩹 Active Conditions")
-    if not gs['conditions']:
+    if not gs.get('conditions'):
         st.info("Amara is currently free of any debilitating conditions.")
     else:
         for condition in gs['conditions'].keys():
@@ -150,14 +151,14 @@ with tab_stat:
         ("Presence", "CHA", "Force of personality")
     ]
 
-    level_bonus = gs['level'] // 2
+    level_bonus = gs.get('level', 0) // 2
     for i, (save_name, attr_key, hint) in enumerate(save_list):
-        total_save = eff_attr[attr_key] + level_bonus
+        total_save = eff_attr.get(attr_key, gs['attributes'].get(attr_key, 0)) + level_bonus
         with save_cols[i % 3]:
             st.metric(
                 label=save_name, 
                 value=f"+{total_save}", 
-                delta=f"Attr: {eff_attr[attr_key]} | Lvl: {level_bonus}",
+                delta=f"Attr: {eff_attr.get(attr_key, gs['attributes'].get(attr_key, 0))} | Lvl: {level_bonus}",
                 delta_color="off",
                 help=hint
             )
@@ -173,10 +174,10 @@ with tab_stat:
         st.code("-20 Max HP\n-20 Max Stamina\n-20 Max Mana", language="diff")
 
     with v_col2:
-        st.markdown(f"**Subjugation Peak:** `{gs['orgasm_count']}/10` overflows")
-        peak_progress = (gs['orgasm_count'] / 10)
+        st.markdown(f"**Subjugation Peak:** `{gs.get('orgasm_count', 0)}/10` overflows")
+        peak_progress = (gs.get('orgasm_count', 0) / 10)
         st.progress(peak_progress)
-        if gs['orgasm_count'] >= 7:
+        if gs.get('orgasm_count', 0) >= 7:
             st.error("⚠️ HIGH RISK: Vexal state nearing Subjugation threshold.")
         else:
             st.success("Vexal state currently manageable.")
@@ -202,11 +203,11 @@ with tab_stat:
     # 6. Skill Progression Display
     st.divider()
     st.subheader("📈 Skill Progression")
-    for cat, sks in gs['skills'].items():
+    for cat, sks in gs.get('skills', {}).items():
         with st.expander(f"{cat} Mastery"):
             c1, c2 = st.columns(2)
             for i, (s, r) in enumerate(sks.items()):
-                exp = gs["skills_exp"][cat][s]
+                exp = gs.get("skills_exp", {}).get(cat, {}).get(s, 0)
                 level = exp // 10
                 progress = exp % 10
                 c1.write(f"**{s}**: {r} (Level {level}, {progress}/10 exp)")
@@ -215,8 +216,8 @@ with tab_stat:
     # 7. Experience Display
     st.divider()
     st.subheader("📊 Experience")
-    st.progress(gs["experience"] / 100)
-    st.write(f"Experience: {gs['experience']} / 100")
+    st.progress(gs.get("experience", 0) / 100)
+    st.write(f"Experience: {gs.get('experience', 0)} / 100")
     
     # 8. Location System
     st.divider()
@@ -229,9 +230,9 @@ with tab_stat:
     st.divider()
     st.subheader("📈 Stat Tracking")
     st.line_chart({
-        "HP": [gs['hp'], gs['hp_max']],
-        "Stamina": [gs['stamina'], gs['stamina_max']],
-        "Mana": [gs['mana'], gs['mana_max']]
+        "HP": [gs.get('hp', 0), gs.get('hp_max', 0)],
+        "Stamina": [gs.get('stamina', 0), gs.get('stamina_max', 0)],
+        "Mana": [gs.get('mana', 0), gs.get('mana_max', 0)]
     })
     
     # 10. Puzzle System
@@ -249,7 +250,7 @@ with tab_stat:
             st.rerun()
 
 with tab_con:
-    c_win = st.container(height=350)
+    c_win = st.container()
     with c_win:
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): 
@@ -258,13 +259,13 @@ with tab_con:
     st.write("---")
     d1, d2, d3 = st.columns(3)
     with d1:
-        sk_list = sorted([s for cat in gs['skills'].values() for s in cat.keys()])
+        sk_list = sorted([s for cat in gs.get('skills', {}).values() for s in cat.keys()])
         sk = st.selectbox("Skills", sk_list, label_visibility="collapsed")
         if st.button("💪 Add Skill Tag", use_container_width=True): 
             st.session_state.cmd_buffer = f"[Use Skill: {sk}] "
             st.rerun()
     with d2:
-        sp = st.selectbox("Spells", gs['known_spells'], label_visibility="collapsed")
+        sp = st.selectbox("Spells", gs.get('known_spells', []), label_visibility="collapsed")
         if st.button("✨ Add Spell Tag", use_container_width=True): 
             st.session_state.cmd_buffer = f"[Use Spell: {sp}] "
             st.rerun()
@@ -291,7 +292,7 @@ with tab_con:
 
 with tab_char:
     st.subheader("Mastered Skills")
-    for cat, sks in gs['skills'].items():
+    for cat, sks in gs.get('skills', {}).items():
         with st.expander(f"{cat} Mastery"):
             c1, c2 = st.columns(2)
             for i, (s, r) in enumerate(sks.items()): 
@@ -300,8 +301,8 @@ with tab_char:
     st.divider()
     st.subheader("✨ Spellbook")
     sp1, sp2 = st.columns(2)
-    for i, spn in enumerate(gs['known_spells']):
-        base_cost = gs['mana_costs'].get(spn, 0)
+    for i, spn in enumerate(gs.get('known_spells', [])):
+        base_cost = gs.get('mana_costs', {}).get(spn, 0)
         effective_cost = int(base_cost * spell_cost_multiplier)
         cost_display = f"{effective_cost} MP"
         if effective_cost != base_cost:
@@ -310,15 +311,16 @@ with tab_char:
 
 with tab_inv:
     st.subheader("Equipment Detail")
-    for slot, d in gs['equipment'].items():
+    for slot, d in gs.get('equipment', {}).items():
         with st.container():
-            props = MAT_PROPS.get(d['material'], {})
-            st.markdown(f"**Slot:** `{slot}` | **Item:** {d['item']} | **Material:** {d['material']}")
+            props = MAT_PROPS.get(d.get('material', ''), {})
+            st.markdown(f"**Slot:** `{slot}` | **Item:** {d.get('item', '')} | **Material:** {d.get('material', '')}")
             col_a, col_b, col_c = st.columns(3)
             col_a.write(f"🛡️ AC (DT): {props.get('DT', 'N/A')}")
             col_b.write(f"⚖️ Weight: {props.get('Weight', '0')} lbs")
             col_c.write(f"🔊 Noise: {props.get('Noise', '0')}")
-            st.progress(d['cond']/100, text=f"Condition: {d['cond']}%")
+            st.progress(d.get('cond', 0)/100)
+            st.caption(f"Condition: {d.get('cond', 0)}%")
 
 with tab_sett:
     st.subheader("🛠️ System Controls")
@@ -329,7 +331,7 @@ with tab_sett:
             st.session_state.messages = st.session_state.messages[:-2]
             st.rerun()
         else:
-            st.toast("No turns left to undo!", icon="🚫")
+            st.warning("No turns left to undo!")
 
     # 2. CONDITION MANAGEMENT
     st.divider()
@@ -342,7 +344,7 @@ with tab_sett:
         new_cond = st.selectbox("Select Condition", list(CONDITION_EFFECTS.keys()), key="add_cond")
         duration = st.number_input("Duration (turns)", min_value=1, max_value=99, value=5, key="cond_duration")
         if st.button("➕ Apply Condition", use_container_width=True):
-            gs['conditions'][new_cond] = CONDITION_EFFECTS[new_cond]['desc']
+            gs.setdefault('conditions', {})[new_cond] = CONDITION_EFFECTS[new_cond]['desc']
             st.session_state.condition_timers[new_cond] = duration
             st.success(f"Applied {new_cond} for {duration} turns!")
             time.sleep(0.5)
@@ -350,10 +352,11 @@ with tab_sett:
     
     with col_remove:
         st.markdown("**Remove Condition:**")
-        if gs['conditions']:
+        if gs.get('conditions'):
             rem_cond = st.selectbox("Active Conditions", list(gs['conditions'].keys()), key="rem_cond")
             if st.button("➖ Remove Condition", use_container_width=True):
-                del gs['conditions'][rem_cond]
+                if rem_cond in gs.get('conditions', {}):
+                    del gs['conditions'][rem_cond]
                 if rem_cond in st.session_state.condition_timers:
                     del st.session_state.condition_timers[rem_cond]
                 st.success(f"Removed {rem_cond}!")
@@ -375,7 +378,7 @@ with tab_sett:
         st.download_button(
             label="DOWNLOAD SAVE (.json)",
             data=save_data,
-            file_name=f"vexal_save_{gs['name']}.json",
+            file_name=f"vexal_save_{gs.get('name','save')}.json",
             mime="application/json",
             use_container_width=True
         )
@@ -386,7 +389,8 @@ with tab_sett:
         if uploaded_file is not None:
             try:
                 save_obj = json.load(uploaded_file)
-                if "game_state" in save_obj and "vaxel_state" in save_obj["game_state"]:
+                # require the correctly-named key 'vexal_state' in game_state for this repo
+                if "game_state" in save_obj and "vexal_state" in save_obj["game_state"]:
                     st.session_state.game_state = save_obj["game_state"]
                     if "condition_timers" in save_obj:
                         st.session_state.condition_timers = save_obj["condition_timers"]
@@ -394,7 +398,7 @@ with tab_sett:
                     time.sleep(1)
                     st.rerun()
                 else:
-                    st.error("Invalid save file format.")
+                    st.error("Invalid save file format. Required key 'vexal_state' missing.")
             except Exception as e:
                 st.error(f"Error loading save: {e}")
 
@@ -403,9 +407,10 @@ with tab_sett:
     col_acc, col_rst = st.columns(2)
     
     with col_acc:
-        st.session_state.tts_enabled = st.toggle(
+        # Use checkbox (widely supported) instead of toggle to control TTS
+        st.session_state.tts_enabled = st.checkbox(
             "🔊 Text-to-Speech (HTML5)", 
-            value=st.session_state.tts_enabled,
+            value=st.session_state.get("tts_enabled", True),
             help="Toggle automatic reading of GM responses."
         )
 
