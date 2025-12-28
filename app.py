@@ -296,7 +296,7 @@ with tab_stat:
         ("Presence", "CHA", "Force of personality")
     ]
 
-     level_bonus = gs['level'] // 2
+    level_bonus = gs['level'] // 2
     for i, (save_name, attr_key, hint) in enumerate(save_list):
         total_save = eff_attr[attr_key] + level_bonus
         with save_cols[i % 3]:
