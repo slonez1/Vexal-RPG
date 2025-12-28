@@ -19,6 +19,8 @@ st.markdown("""
         .buff-badge { background-color: #28a745; color: white; }
         .debuff-badge-red { background-color: #ff4b4b; color: white; }
         .debuff-badge-orange { background-color: #ff9800; color: white; }
+        .star { font-size: 1.2rem; }
+        .chart-container { height: 300px; }
     </style>
     <script>
         function speak(text) {
@@ -39,6 +41,10 @@ if "tts_enabled" not in st.session_state:
     st.session_state.tts_enabled = True
 if "condition_timers" not in st.session_state:
     st.session_state.condition_timers = {}
+if "skills_exp" not in st.session_state.game_state:
+    st.session_state.game_state["skills_exp"] = {cat: {s: 0 for s in sks.keys()} for cat, sks in st.session_state.game_state["skills"].items()}
+    st.session_state.game_state["experience"] = 0
+    st.session_state.game_state["level"] = 1
 
 gs = st.session_state.game_state
 
@@ -53,55 +59,64 @@ CONDITION_EFFECTS = {
         "color": "#ff4b4b",
         "desc": "Severe fatigue reduces DEX and CON by 5",
         "type": "debuff",
-        "effects": {"DEX": -5, "CON": -5, "stamina_drain": 2}
+        "effects": {"DEX": -5, "CON": -5, "stamina_drain": 2},
+        "severity": 3
     },
     "Fatigued": {
         "color": "#ff9800",
         "desc": "Mild exhaustion reduces DEX by 3",
         "type": "debuff",
-        "effects": {"DEX": -3, "stamina_drain": 1}
+        "effects": {"DEX": -3, "stamina_drain": 1},
+        "severity": 2
     },
     "Wounded": {
         "color": "#d32f2f",
         "desc": "Physical damage reduces max HP by 20",
         "type": "debuff",
-        "effects": {"hp_max_penalty": -20}
+        "effects": {"hp_max_penalty": -20},
+        "severity": 3
     },
     "Sprained Ankle": {
         "color": "#ff9800",
         "desc": "Movement penalty reduces DEX by 2",
         "type": "debuff",
-        "effects": {"DEX": -2, "movement_speed": 0.5}
+        "effects": {"DEX": -2, "movement_speed": 0.5},
+        "severity": 2
     },
     "Parched": {
         "color": "#f44336",
         "desc": "Mana regeneration slowed by 50%",
         "type": "debuff",
-        "effects": {"mana_regen": 0.5}
+        "effects": {"mana_regen": 0.5},
+        "severity": 2
     },
     "Divine Favor": {
         "color": "#ffd700",
         "desc": "Blessed by divine power - 25% mana cost reduction",
         "type": "buff",
-        "effects": {"spell_cost_multiplier": 0.75}
+        "effects": {"spell_cost_multiplier": 0.75},
+        "severity": 1
     },
     "Blessed": {
         "color": "#28a745",
         "desc": "Holy protection increases WIS by 3",
         "type": "buff",
-        "effects": {"WIS": 3}
+        "effects": {"WIS": 3},
+        "severity": 1
     },
     "Haste": {
         "color": "#00bcd4",
         "desc": "Supernatural speed increases DEX by 4",
         "type": "buff",
-        "effects": {"DEX": 4, "movement_speed": 1.5}
+        "effects": {"DEX": 4, "movement_speed": 1.5},
+        "severity": 1
     },
     "Vexal Active": {
         "color": "#e83e8c",
         "desc": "Corrupting influence suppresses all attributes",
         "type": "debuff",
-        "effects": {"all_attrs": -2, "pool_penalty": -20}
+        "effects": {"all_attrs": -2, "pool_penalty": -20},
+        "severity": 4
     }
 }
 
@@ -120,14 +135,38 @@ def update_condition_timers():
     for cond in expired:
         del st.session_state.condition_timers[cond]
 
+# --- SKILL PROGRESSION SYSTEM ---
+def gain_experience(exp):
+    gs["experience"] += exp
+    # Level up skills based on usage
+    for cat, sks in gs["skills"].items():
+        for skill in sks:
+            if skill in gs["skills_exp"][cat]:
+                gs["skills_exp"][cat][skill] += exp // 10
+    # Level up character
+    if gs["experience"] >= 100:
+        gs["level"] += 1
+        gs["hp_max"] += 10
+        gs["stamina_max"] += 5
+        gs["mana_max"] += 5
+        gs["experience"] = 0
+        st.success(f"Level up! New level: {gs['level']}")
+
 # --- GM AI & TTS ---
 def get_gm_response(prompt):
-    update_condition_timers()  # Decrement timers on each action
+    update_condition_timers()
+    # Experience gain for actions
+    if "use" in prompt.lower() or "cast" in prompt.lower():
+        gain_experience(10)
+    
+    # Check for puzzle solutions
+    if "solve" in prompt.lower():
+        st.success("Puzzle solved! You found a hidden passage.")
+    
     return f"Narrative: Amara acts upon '{prompt}'. (Vexal influence detected)."
 
 def trigger_tts(text):
     if st.session_state.tts_enabled:
-        # Optimized TTS with faster rate
         clean_text = text.replace("'", "\\'").replace("\n", " ")
         st.components.v1.html(f"<script>speak('{clean_text}');</script>", height=0)
 
@@ -193,7 +232,7 @@ def get_effective_stats(_gs_dict):
         'mana_regen': mana_regen
     }
 
-# Convert gs to dict for caching (session_state objects aren't hashable)
+# Convert gs to dict for caching
 gs_dict = dict(gs)
 stats = get_effective_stats(gs_dict)
 eff_attr = stats['attributes']
@@ -231,10 +270,13 @@ with st.sidebar:
             if condition in CONDITION_EFFECTS:
                 cond_data = CONDITION_EFFECTS[condition]
                 badge_class = "buff-badge" if cond_data['type'] == "buff" else "debuff-badge-red"
-                timer_text = ""
+                timer_info = ""
                 if condition in st.session_state.condition_timers:
-                    timer_text = f" ({st.session_state.condition_timers[condition]} turns)"
-                st.markdown(f"<span class='debuff-badge {badge_class}'>{condition}{timer_text}</span>", unsafe_allow_html=True)
+                    timer_info = f" ({st.session_state.condition_timers[condition]} turns)"
+                severity = cond_data.get("severity", 1)
+                severity_color = "#ff4b4b" if severity > 2 else "#ff9800" if severity > 1 else "#28a745"
+                severity_text = "★" * severity
+                st.markdown(f"<span class='debuff-badge {badge_class}'>{condition}{timer_info} {severity_text}</span>", unsafe_allow_html=True)
     
     st.write("### Attributes")
     a_cols = st.columns(3)
@@ -266,7 +308,7 @@ with tab_stat:
     if not gs['conditions']:
         st.info("Amara is currently free of any debilitating conditions.")
     else:
-        for condition, effect in gs['conditions'].items():
+        for condition in gs['conditions'].keys():
             if condition in CONDITION_EFFECTS:
                 cond_data = CONDITION_EFFECTS[condition]
                 timer_info = ""
@@ -279,8 +321,6 @@ with tab_stat:
                     st.warning(f"⚠️ **{condition}**: {cond_data['desc']}{timer_info}")
             else:
                 st.warning(f"**{condition}**: {effect}")
-
-    st.divider()
 
     # 2. Saving Throws Logic
     st.subheader("🎲 Saving Throws")
@@ -307,8 +347,6 @@ with tab_stat:
                 delta_color="off",
                 help=hint
             )
-
-    st.divider()
 
     # 3. Vexal State Mechanics
     st.subheader("🧬 Vexal Influence Breakdown")
@@ -346,6 +384,55 @@ with tab_stat:
             st.success(f"🌟 Divine Favor Active: Spell costs reduced to **{cost_pct}%**")
         else:
             st.warning(f"⚠️ Spell costs increased to **{cost_pct}%**")
+
+    # 6. Skill Progression Display
+    st.divider()
+    st.subheader("📈 Skill Progression")
+    for cat, sks in gs['skills'].items():
+        with st.expander(f"{cat} Mastery"):
+            c1, c2 = st.columns(2)
+            for i, (s, r) in enumerate(sks.items()):
+                exp = gs["skills_exp"][cat][s]
+                level = exp // 10
+                progress = exp % 10
+                c1.write(f"**{s}**: {r} (Level {level}, {progress}/10 exp)")
+                c2.write(f"Exp: {exp}")
+    
+    # 7. Experience Display
+    st.divider()
+    st.subheader("📊 Experience")
+    st.progress(gs["experience"] / 100)
+    st.write(f"Experience: {gs['experience']} / 100")
+    
+    # 8. Location System
+    st.divider()
+    st.subheader("📍 Location")
+    if "location" not in gs:
+        gs["location"] = "Dark Forest"
+    st.markdown(f"**Current Location:** {gs['location']}")
+    
+    # 9. Stat Tracking Charts
+    st.divider()
+    st.subheader("📈 Stat Tracking")
+    st.line_chart({
+        "HP": [gs['hp'], gs['hp_max']],
+        "Stamina": [gs['stamina'], gs['stamina_max']],
+        "Mana": [gs['mana'], gs['mana_max']]
+    })
+    
+    # 10. Puzzle System
+    st.divider()
+    st.subheader("🧩 Puzzles")
+    if "puzzle" not in gs:
+        gs["puzzle"] = "none"
+    if gs["puzzle"] == "none":
+        st.info("No puzzles active. Look for clues in the environment.")
+    else:
+        st.warning(f"Puzzle: {gs['puzzle']} - Try to solve it!")
+        if st.button("Solve Puzzle"):
+            gs["puzzle"] = "none"
+            st.success("Puzzle solved! You found a hidden passage.")
+            st.rerun()
 
 with tab_con:
     c_win = st.container(height=350)
