@@ -41,12 +41,12 @@ SKILL_MAP = {
     "Insight": "WIS", "Performance": "CHA", "Etiquette": "CHA", "Bartering": "CHA"
 }
 
-MAT_PROPS = {
-    "Leather": {"DT": 1, "Weight": 0.5, "Noise": -1},
-    "Steel":   {"DT": 5, "Weight": 1.0, "Noise": -8},
-    "Mithril": {"DT": 8, "Weight": 0.1, "Noise": -3},
-    "Aureite": {"DT": 6, "Weight": 0.5, "Noise": -5},
-    "Silver-Steel": {"DT": 6, "Weight": 0.8, "Noise": -6}
+SKILL_CATS = {
+    "Martial": ["One-Handed", "Two-Handed", "Bladed", "Blunt", "Daggers", "Axes", "Polearms", "Marksmanship", "Blocking", "Heavy Armor", "Light Armor", "Unarmed"],
+    "Mystical": ["Holy", "Arcane", "Elemental", "Illusion", "Death", "Blood", "Restoration", "Void Navigation"],
+    "Subterfuge": ["Stealth", "Lockpicking", "Pickpocket", "Poisoning", "Trap Disarming", "Shadow-Stitch"],
+    "Professional": ["Alchemy", "Blacksmithing", "Enchanting", "Survival", "Athletics", "Acrobatics", "Anatomy", "Tinkering", "Cooking", "Leatherworking"],
+    "Social": ["Persuasion", "Intimidation", "Deception", "Insight", "Performance", "Etiquette", "Bartering"]
 }
 
 SYSTEM_RULES = "You are a GM for a dark fantasy RPG. Use tags like [PLAYER DAMAGE: 10], [AROUSAL: +5], [CONDITION: Name | Effect]."
@@ -58,9 +58,10 @@ if "game_state" not in st.session_state:
         'mana': 200, 'mana_max': 200, 'divine_favor': 95, 'arousal': 0, 'orgasm_count': 0,
         'turn_counter': 0, 'vaxel_state': "Active",
         'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
+        'skills': {skill: 10 for skill in SKILL_MAP.keys()}, # Initialize all at Rank 10
         'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Lesser Heal'],
         'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Lesser Heal': 12},
-        'conditions': {"Vexal Active": "(-2 to all stats)"},
+        'conditions': {"Vexal Active": "(-2 to STR, -2 DEX, -2 CON, -2 INT, -2 WIS, -2 CHA)"},
         'equipment': {'Torso': {'item': 'Plate', 'material': 'Steel'}},
         'inventory': {'containers': {'Belt Pouch': {'capacity': 5, 'items': ['Key']}}, 'currency': {'Silver': 150}},
         'lore_ledger': {'NPCs': {}, 'Locations': {}, 'Main Quest': {"Current Objective": "Enter the Spire."}}
@@ -94,17 +95,9 @@ def custom_bar(label, current, maximum, color):
 def parse_logic(text):
     gs = st.session_state.game_state
     gs['turn_counter'] += 1
-    
-    # 1. Damage/Healing
     dmg = re.search(r'\[PLAYER DAMAGE: (\d+)\]', text)
     if dmg: gs['hp'] = max(0, gs['hp'] - int(dmg.group(1)))
     
-    # 2. Condition Auto-Expire Logic
-    if "Sprained Ankle" in gs['conditions'] and gs['turn_counter'] % 20 == 0:
-        del gs['conditions']["Sprained Ankle"]
-        st.toast("Condition Expired: Sprained Ankle")
-        
-    # 3. Vaxel / Orgasm Logic
     aro = re.search(r'\[AROUSAL: \+(\d+)\]', text)
     if aro:
         gs['arousal'] += int(aro.group(1))
@@ -114,7 +107,6 @@ def parse_logic(text):
             gs['conditions']["Orgasm Aftershock"] = "(-4 STR, -4 DEX for 5 turns)"
             st.toast("VAXEL OVERLOAD!", icon="🔥")
 
-    # 4. Handle New Conditions
     cond = re.search(r'\[CONDITION: (.*?) \| (.*?)\]', text)
     if cond: gs['conditions'][cond.group(1)] = cond.group(2)
 
@@ -126,14 +118,40 @@ with st.sidebar:
     custom_bar("❤️ HEALTH", gs['hp'], gs['hp_max'], "#ff4b4b")
     custom_bar("⚡ STAMINA", gs['stamina'], gs['stamina_max'], "#28a745")
     custom_bar("✨ MANA", gs['mana'], gs['mana_max'], "#007bff")
+    
+    # Requirement 1: Horizontal line between Mana and Divine Favor
+    st.markdown("<hr style='margin: 15px 0; border: none; border-top: 1px solid #444;'>", unsafe_allow_html=True)
+    
     custom_bar("⚖️ DIVINE FAVOR", gs['divine_favor'], 100, "#fd7e14")
     
     st.divider()
+    
+    # Requirement 2: Fancy Attribute Grid with Modifier Logic
     eff = get_effective_attributes()
-    st.markdown("<div style='text-align:center; font-size:0.7rem; font-weight:bold;'>ATTRIBUTES</div>", unsafe_allow_html=True)
-    c = st.columns(3)
-    for i, (k, v) in enumerate(eff.items()):
-        c[i%3].metric(k, v)
+    st.markdown("<div style='text-align:center; font-size:0.8rem; font-weight:bold; color:#aaa; margin-bottom:10px;'>ATTRIBUTES</div>", unsafe_allow_html=True)
+    
+    attr_html = "<div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;'>"
+    for attr, base_val in gs['attributes'].items():
+        current_val = eff[attr]
+        diff = current_val - base_val
+        color = "#fff"
+        display_val = f"{current_val}"
+        
+        if diff < 0:
+            color = "#ff4b4b"
+            display_val = f"{current_val}<span style='font-size:0.7rem;'>({diff})</span>"
+        elif diff > 0:
+            color = "#28a745"
+            display_val = f"{current_val}<span style='font-size:0.7rem;'>(+{diff})</span>"
+            
+        attr_html += f"""
+            <div style='background: #1e1e1e; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #333;'>
+                <div style='font-size: 0.65rem; color: #888;'>{attr}</div>
+                <div style='font-size: 1.1rem; font-weight: bold; color: {color};'>{display_val}</div>
+            </div>
+        """
+    attr_html += "</div>"
+    st.markdown(attr_html, unsafe_allow_html=True)
     
     st.divider()
     st.markdown(f"**Vaxel State:** `{gs['vaxel_state']}`")
@@ -150,14 +168,21 @@ with tab_status:
         st.warning(f"**{cond}**: {effect}")
 
 with tab_char:
-    st.subheader("Skills & Spells")
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        for s, r in SKILL_MAP.items():
-            if r == "STR": st.caption(f"{s} (Rank 10)")
-    with col_s2:
-        for spell in gs['known_spells']:
-            st.info(f"✨ {spell}")
+    # Requirement 3: Categorized Skills
+    st.subheader("Skills & Mastery")
+    
+    for cat, skills in SKILL_CATS.items():
+        with st.expander(f"{cat} Skills", expanded=(cat=="Martial")):
+            cols = st.columns(2)
+            for idx, skill in enumerate(skills):
+                rank = gs['skills'].get(skill, 0)
+                primary_stat = SKILL_MAP.get(skill, "???")
+                cols[idx % 2].markdown(f"**{skill}**: `Rank {rank}` <small>({primary_stat})</small>", unsafe_allow_html=True)
+    
+    st.divider()
+    st.subheader("Spellbook")
+    for spell in gs['known_spells']:
+        st.info(f"✨ {spell} — Cost: {gs['mana_costs'].get(spell, '??')} MP")
 
 with tab_inv:
     st.subheader("Equipped Gear")
@@ -166,7 +191,6 @@ with tab_inv:
 
 with tab_lore:
     st.success(f"**Main Quest:** {gs['lore_ledger']['Main Quest']['Current Objective']}")
-    st.write("Known NPCs:", gs['lore_ledger']['NPCs'])
 
 with tab_console:
     chat_container = st.container(height=400)
@@ -175,7 +199,6 @@ with tab_console:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
     st.write("---")
-    # THE 3-COLUMN ACTION DECK
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -195,18 +218,14 @@ with tab_console:
         if st.button("🚀 Impromptu", use_container_width=True):
             if impromptu_text:
                 st.session_state.messages.append({"role": "user", "content": f"I attempt an impromptu magical feat: {impromptu_text}"})
-                # Add Gemini trigger here
                 st.rerun()
 
-    # FULL WIDTH DIRECT COMMAND
     direct_cmd = st.chat_input("Direct Command Amara...")
-    # Logic to merge buffer and direct command
     final_action = st.session_state.cmd_buffer if st.session_state.cmd_buffer else direct_cmd
     
     if direct_cmd or (st.session_state.cmd_buffer and st.button("Confirm Staged Action")):
         st.session_state.messages.append({"role": "user", "content": final_action})
         st.session_state.cmd_buffer = ""
-        # Simulation of AI Response
         ai_resp = f"The GM acknowledges your action: {final_action}. [PLAYER DAMAGE: 5]"
         parse_logic(ai_resp)
         st.session_state.messages.append({"role": "assistant", "content": ai_resp})
