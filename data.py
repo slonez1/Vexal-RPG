@@ -1,5 +1,7 @@
 # data.py
 import json
+import copy
+from datetime import datetime, timedelta
 
 MAT_PROPS = {
     "Leather": {"DT": 1, "Weight": 5, "Noise": -1, "Dex_Penalty": 0},
@@ -87,7 +89,7 @@ SPELL_TIERING = {
     "Death": [
         {"name": "Necrotic Bolt", "tier": 1, "dmg": "2d6", "mana": 10},
         {"name": "Death Ward", "tier": 1, "dmg": "0d0", "mana": 15},
-        {"name": "Soul Drain", "tier": 1, "dmg": "0d0", "mana": 12},
+        {"name": "Soul Siphon", "tier": 1, "dmg": "0d0", "mana": 12},
         {"name": "Necrotic Surge", "tier": 1, "dmg": "3d6", "mana": 20},
         {"name": "Death Touch", "tier": 1, "dmg": "1d6", "mana": 10},
         {"name": "Death Field", "tier": 1, "dmg": "0d0", "mana": 15},
@@ -162,7 +164,7 @@ SPELL_TIERING = {
 INITIAL_GAME_STATE = {
     'name': 'Amara Silvermoon', 'level': 10, 'xp': 5600, 'xp_next': 5500,
     'hp': 100, 'hp_max': 250, 'mana': 30, 'mana_max': 200, 'stamina': 80, 'stamina_max': 180,
-    'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vaxel_state': "Active",
+    'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vexal_state': "Active",
     'attributes': {'STR': 16, 'DEX': 16, 'CON': 14, 'INT': 12, 'WIS': 20, 'CHA': 18},
     'conditions': {"Vexal Active": "(-2 to ALL Attributes, -20 to Pools)"},
     'skills': {
@@ -181,6 +183,4 @@ INITIAL_GAME_STATE = {
     'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Consecrate Ground', 'Lesser Smite', 'Lesser Heal', 'Purify Flesh', 'Stamina Surge'],
     'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Consecrate Ground': 20, 'Lesser Smite': 10, 'Lesser Heal': 12, 'Purify Flesh': 10, 'Stamina Surge': 10},
     'inventory': {'currency': {'Silver': 150}},
-    'undo_stack': [],  # Stores last turn's state for Undo
-    'buffs': {}  # Stores active buffs (e.g., +2 STR, +10% HP)
 }
