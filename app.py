@@ -49,8 +49,6 @@ SKILL_CATS = {
     "Social": ["Persuasion", "Intimidation", "Deception", "Insight", "Performance", "Etiquette", "Bartering"]
 }
 
-SYSTEM_RULES = "You are a GM for a dark fantasy RPG. Use tags like [PLAYER DAMAGE: 10], [AROUSAL: +5], [CONDITION: Name | Effect]."
-
 # --- 3. SESSION STATE ---
 if "game_state" not in st.session_state:
     st.session_state.game_state = {
@@ -58,7 +56,7 @@ if "game_state" not in st.session_state:
         'mana': 200, 'mana_max': 200, 'divine_favor': 95, 'arousal': 0, 'orgasm_count': 0,
         'turn_counter': 0, 'vaxel_state': "Active",
         'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
-        'skills': {skill: 10 for skill in SKILL_MAP.keys()}, # Initialize all at Rank 10
+        'skills': {skill: 15 for skill in SKILL_MAP.keys()}, # Defaulting Amara's skills to 15 for now
         'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Lesser Heal'],
         'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Lesser Heal': 12},
         'conditions': {"Vexal Active": "(-2 to STR, -2 DEX, -2 CON, -2 INT, -2 WIS, -2 CHA)"},
@@ -75,8 +73,10 @@ def get_effective_attributes():
     gs = st.session_state.game_state
     eff = gs['attributes'].copy()
     for impact in gs['conditions'].values():
+        # Enhanced regex to pick up modifiers like (-2 to STR)
         mods = re.findall(r'([+-]\d+)\s+(STR|DEX|CON|INT|WIS|CHA)', impact.upper())
-        for val, attr in mods: eff[attr] += int(val)
+        for val, attr in mods: 
+            eff[attr] += int(val)
     return eff
 
 def custom_bar(label, current, maximum, color):
@@ -95,6 +95,7 @@ def custom_bar(label, current, maximum, color):
 def parse_logic(text):
     gs = st.session_state.game_state
     gs['turn_counter'] += 1
+    
     dmg = re.search(r'\[PLAYER DAMAGE: (\d+)\]', text)
     if dmg: gs['hp'] = max(0, gs['hp'] - int(dmg.group(1)))
     
@@ -119,35 +120,34 @@ with st.sidebar:
     custom_bar("⚡ STAMINA", gs['stamina'], gs['stamina_max'], "#28a745")
     custom_bar("✨ MANA", gs['mana'], gs['mana_max'], "#007bff")
     
-    # Requirement 1: Horizontal line between Mana and Divine Favor
-    st.markdown("<hr style='margin: 15px 0; border: none; border-top: 1px solid #444;'>", unsafe_allow_html=True)
+    # REQUIREMENT 1: Horizontal Line
+    st.markdown("<hr style='border: 1px solid #444; margin: 20px 0;'>", unsafe_allow_html=True)
     
     custom_bar("⚖️ DIVINE FAVOR", gs['divine_favor'], 100, "#fd7e14")
     
     st.divider()
     
-    # Requirement 2: Fancy Attribute Grid with Modifier Logic
+    # REQUIREMENT 2: Fancy Attribute Grid
     eff = get_effective_attributes()
-    st.markdown("<div style='text-align:center; font-size:0.8rem; font-weight:bold; color:#aaa; margin-bottom:10px;'>ATTRIBUTES</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align:center; font-size:0.7rem; font-weight:bold; margin-bottom: 10px;'>ATTRIBUTES</div>", unsafe_allow_html=True)
     
-    attr_html = "<div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;'>"
+    attr_html = "<div style='display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;'>"
     for attr, base_val in gs['attributes'].items():
         current_val = eff[attr]
         diff = current_val - base_val
-        color = "#fff"
-        display_val = f"{current_val}"
         
+        # Determine Display Format
         if diff < 0:
-            color = "#ff4b4b"
-            display_val = f"{current_val}<span style='font-size:0.7rem;'>({diff})</span>"
+            val_display = f"<span style='color: #ff4b4b;'>{current_val}({diff})</span>"
         elif diff > 0:
-            color = "#28a745"
-            display_val = f"{current_val}<span style='font-size:0.7rem;'>(+{diff})</span>"
+            val_display = f"<span style='color: #28a745;'>{current_val}(+{diff})</span>"
+        else:
+            val_display = f"<span>{current_val}</span>"
             
         attr_html += f"""
-            <div style='background: #1e1e1e; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #333;'>
-                <div style='font-size: 0.65rem; color: #888;'>{attr}</div>
-                <div style='font-size: 1.1rem; font-weight: bold; color: {color};'>{display_val}</div>
+            <div style="background: #1e1e1e; border: 1px solid #333; padding: 5px; border-radius: 4px; text-align: center;">
+                <div style="font-size: 0.6rem; color: #888;">{attr}</div>
+                <div style="font-size: 0.9rem; font-weight: bold;">{val_display}</div>
             </div>
         """
     attr_html += "</div>"
@@ -164,25 +164,28 @@ tab_console, tab_status, tab_char, tab_inv, tab_lore = st.tabs(["📜 CONSOLE", 
 
 with tab_status:
     st.subheader("Current Ailments & Buffs")
+    if not gs['conditions']:
+        st.write("No active conditions.")
     for cond, effect in gs['conditions'].items():
         st.warning(f"**{cond}**: {effect}")
 
 with tab_char:
-    # Requirement 3: Categorized Skills
+    # REQUIREMENT 3: Organized Skills and Current Values
     st.subheader("Skills & Mastery")
     
-    for cat, skills in SKILL_CATS.items():
-        with st.expander(f"{cat} Skills", expanded=(cat=="Martial")):
+    for category, skills in SKILL_CATS.items():
+        with st.expander(f"{category}", expanded=True):
             cols = st.columns(2)
-            for idx, skill in enumerate(skills):
-                rank = gs['skills'].get(skill, 0)
-                primary_stat = SKILL_MAP.get(skill, "???")
-                cols[idx % 2].markdown(f"**{skill}**: `Rank {rank}` <small>({primary_stat})</small>", unsafe_allow_html=True)
-    
+            for i, skill_name in enumerate(skills):
+                val = gs['skills'].get(skill_name, 0)
+                stat = SKILL_MAP.get(skill_name, "???")
+                # Alternate columns for better layout
+                cols[i % 2].markdown(f"**{skill_name}**: `{val}` <small>({stat})</small>", unsafe_allow_html=True)
+
     st.divider()
-    st.subheader("Spellbook")
+    st.subheader("Spells")
     for spell in gs['known_spells']:
-        st.info(f"✨ {spell} — Cost: {gs['mana_costs'].get(spell, '??')} MP")
+        st.info(f"✨ {spell} (Cost: {gs['mana_costs'].get(spell, 'N/A')} MP)")
 
 with tab_inv:
     st.subheader("Equipped Gear")
@@ -226,7 +229,21 @@ with tab_console:
     if direct_cmd or (st.session_state.cmd_buffer and st.button("Confirm Staged Action")):
         st.session_state.messages.append({"role": "user", "content": final_action})
         st.session_state.cmd_buffer = ""
-        ai_resp = f"The GM acknowledges your action: {final_action}. [PLAYER DAMAGE: 5]"
+        
+        # GM Prompting Logic
+        try:
+            # We construct a context-rich prompt for the GM
+            context = f"Character Stats: {gs['hp']}/{gs['hp_max']} HP. Active Conditions: {gs['conditions']}."
+            full_prompt = f"System Rules: Use tags like [PLAYER DAMAGE: 10]. Context: {context}. Action: {final_action}"
+            
+            response = client_gemini.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=full_prompt
+            )
+            ai_resp = response.text
+        except Exception as e:
+            ai_resp = f"The GM is thinking... (Error: {e})"
+
         parse_logic(ai_resp)
         st.session_state.messages.append({"role": "assistant", "content": ai_resp})
         st.rerun()
