@@ -5,6 +5,7 @@ from collections import OrderedDict
 import re
 import json
 import logging
+from pathlib import Path
 
 _log = logging.getLogger("vexal.lore")
 
@@ -24,7 +25,7 @@ def init_lore():
 
 def add_vexal_note(text):
     init_lore()
-    st.session_state.lore["vexal"]["notes"].append(text)
+    st.session_state.lore["vexal"].setdefault("notes", []).append(text)
 
 def add_person(name, role=None, significance=None, note=None, tags=None):
     init_lore()
@@ -34,8 +35,11 @@ def add_person(name, role=None, significance=None, note=None, tags=None):
     if note:
         people[name]["notes"].append(note)
     if tags:
-        people[name]["tags"].extend(t for t in tags if t not in people[name]["tags"])
-        st.session_state.lore["tags"].update(tags)
+        # ensure list uniqueness
+        for t in tags:
+            if t not in people[name]["tags"]:
+                people[name]["tags"].append(t)
+            st.session_state.lore["tags"].add(t)
 
 def add_location(name, description=None, tags=None):
     init_lore()
@@ -45,8 +49,10 @@ def add_location(name, description=None, tags=None):
     if description:
         locs[name]["description"] = description
     if tags:
-        locs[name]["tags"].extend(t for t in tags if t not in locs[name]["tags"])
-        st.session_state.lore["tags"].update(tags)
+        for t in tags:
+            if t not in locs[name]["tags"]:
+                locs[name]["tags"].append(t)
+            st.session_state.lore["tags"].add(t)
 
 # Heuristic extractor (fallback)
 _name_rx = re.compile(r"\b([A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})*)\b")
@@ -56,10 +62,11 @@ def auto_extract_and_add(text):
     """
     Conservative heuristic: add proper-noun style tokens as potential persons/locations.
     Also check for key quest words ("Bastion", "Vexal").
+    Returns a small dict describing source.
     """
     init_lore()
     if not text:
-        return {}
+        return {"source": "heuristic"}
     txt = text or ""
     if "bastion" in txt.lower():
         st.session_state.lore["vexal"]["main_quest"] = (
@@ -81,162 +88,186 @@ def auto_extract_and_add(text):
                 add_location(cand, description="Discovered in narrative (heuristic).")
     return {"source": "heuristic"}
 
-# ----------------- LLM integration (Gemini / Google GenAI) -----------------
-def _call_google_genai_chat(prompt, model=None):
+# ----------------- Static Markdown loader -----------------
+def _parse_markdown_entries(text):
     """
-    Try to call Google Generative AI (Gemini) via the google.generativeai client.
-    Requires GEMINI_API_KEY or GOOGLE_API_KEY in st.secrets and google.generativeai installed.
+    Parse a markdown text into a mapping:
+      section_title -> list of entries
+    Each entry: {"name": str, "description": str, "bullets": [str]}
+    Recognizes headings starting with '## ' and entries formatted as:
+      **Name** — description
+      - Role: ...
+      - Significance: ...
+      - Tags: a, b, c
+      - Notes: ...
+    Returns dict.
     """
-    try:
-        import google.generativeai as genai
-    except Exception as e:
-        _log.debug("google.generativeai import failed: %s", e)
-        raise
+    sections = {}
+    current_section = "General"
+    current_entry = None
 
-    # Prefer GEMINI_API_KEY then GOOGLE_API_KEY
-    api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("google_api_key")
-    if not api_key:
-        # also allow a service account JSON in secrets under GOOGLE_SERVICE_ACCOUNT
-        svc = st.secrets.get("GOOGLE_SERVICE_ACCOUNT")
-        if svc:
-            # if a JSON string is present, configure via environment (client library can pick it up)
-            # This is best-effort; if it fails we'll raise later
-            import os, json as _json
-            try:
-                svc_path = "/tmp/streamlit_google_service_account.json"
-                with open(svc_path, "w") as f:
-                    f.write(svc if isinstance(svc, str) else _json.dumps(svc))
-                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = svc_path
-            except Exception as _e:
-                _log.debug("Failed to write service account: %s", _e)
-                raise RuntimeError("No usable Google API credential found in secrets.")
-    else:
-        genai.configure(api_key=api_key)
+    lines = text.splitlines()
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        # Section header
+        if line.startswith("##"):
+            current_section = line[2:].strip()
+            if current_section == "":
+                current_section = "General"
+            sections.setdefault(current_section, [])
+            current_entry = None
+            continue
+        # Entry line: **Name** — description
+        m = re.match(r'^\*\*(.+?)\*\*\s*—\s*(.+)$', line)
+        if m:
+            name = m.group(1).strip()
+            desc = m.group(2).strip()
+            entry = {"name": name, "description": desc, "bullets": []}
+            sections.setdefault(current_section, []).append(entry)
+            current_entry = entry
+            continue
+        # Bullet line
+        if line.startswith("- "):
+            if current_entry is not None:
+                current_entry["bullets"].append(line[2:].strip())
+            else:
+                # stray bullet: store as a note entry
+                sections.setdefault(current_section, []).append({"name": "", "description": "", "bullets": [line[2:].strip()]})
+            continue
+        # Plain text line: append to last entry description if present
+        if current_entry is not None:
+            # append to description
+            current_entry["description"] = (current_entry["description"] + " " + line).strip()
+        else:
+            # create a catch-all entry
+            sections.setdefault(current_section, []).append({"name": "", "description": line, "bullets": []})
+    return sections
 
-    # choose model: prefer configured one in secrets, otherwise fallback to chat-bison
-    model_name = st.secrets.get("GENAI_MODEL") or st.secrets.get("GEMINI_MODEL") or model or "models/chat-bison-001"
-    # Build messages payload
-    try:
-        resp = genai.chat.create(model=model_name, messages=[{"author":"user","content":prompt}], temperature=0.0)
-    except TypeError:
-        # older/newer SDK differences
-        resp = genai.generate(model=model_name, prompt=prompt)
-    # extract text
-    if hasattr(resp, "candidates") and resp.candidates:
-        # older interface
-        return resp.candidates[0].content if hasattr(resp.candidates[0], "content") else str(resp)
-    if hasattr(resp, "last") and resp.last and hasattr(resp.last, "content"):
-        return resp.last.content
-    # fallback to string
-    return str(resp)
-
-def _parse_model_json(text):
-    """Try to parse JSON returned by model; be defensive."""
-    try:
-        payload = text.strip()
-        # remove code fence wrappers if present
-        if payload.startswith("```"):
-            # strip leading/trailing ``` blocks
-            lines = payload.splitlines()
-            # remove first and last if they are ``` markers
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            payload = "\n".join(lines)
-        return json.loads(payload)
-    except Exception as e:
-        _log.debug("JSON parse failed: %s -- raw:%s", e, text[:400])
-        return None
-
-def llm_extract(text):
+def _extract_tags_from_bullets(bullets):
     """
-    Ask an LLM (Gemini/GenAI) to extract structured lore from the text.
-    Returns parsed dict or raises if provider not available.
-    Expected JSON schema (example):
-    {
-      "persons": [{"name":"Eldon","role":"Scholar","significance":"Knows Bastion","notable_notes":["..."],"tags":["scholar"]}],
-      "locations": [{"name":"Harrowfen","description":"A ruined keep","tags":["ruin"]}],
-      "factions": [{"name":"Blood Cult","description":"...","tags":["cult"]}],
-      "tags": ["bastion","vexal"],
-      "vexal_updates": ["Found reference to bastion fragment in Harrowfen."],
-      "time_advance": {"scale":"combat","seconds_per_turn":6}
-    }
+    Look for bullet patterns like 'Tags: a, b, c' and return list of tags.
     """
-    prompt = (
-        "Extract structured lore elements from the following narrative. "
-        "Return valid JSON with keys: persons, locations, factions, tags, vexal_updates, time_advance.\n\n"
-        "Persons: list of objects {name, role (short), significance (short), notable_notes (list), tags (list)}\n"
-        "Locations: list of objects {name, description (short), tags (list)}\n"
-        "Factions: list of objects {name, description (short), tags}\n"
-        "tags: list of short tags\n"
-        "vexal_updates: list of short lines that update the main quest or mention Bastion/fragment clues\n"
-        "time_advance: optional object e.g. {\"scale\":\"combat\",\"seconds_per_turn\":6} or {\"hours\":6} or {\"seconds\":30}\n\n"
-        "Narrative:\n" + (text or "")
-        + "\n\nOutput ONLY valid JSON."
-    )
+    tags = []
+    for b in bullets:
+        if b.lower().startswith("tags:"):
+            rest = b.split(":", 1)[1]
+            tags = [t.strip() for t in re.split(r'[,\|;]', rest) if t.strip()]
+            break
+    return tags
 
-    # Try Google GenAI / Gemini
-    try:
-        resp_text = _call_google_genai_chat(prompt)
-        parsed = _parse_model_json(resp_text)
-        if parsed is not None:
-            return parsed
-    except Exception as e:
-        _log.debug("GenAI/Gemini call failed: %s", e)
-    # If LLM fails, raise to let caller fallback to heuristic
-    raise RuntimeError("LLM extraction failed or no provider available")
+def _extract_role_significance(bullets):
+    role = None
+    significance = None
+    notes = []
+    for b in bullets:
+        if b.lower().startswith("role:"):
+            role = b.split(":",1)[1].strip()
+        elif b.lower().startswith("significance:"):
+            significance = b.split(":",1)[1].strip()
+        elif b.lower().startswith("notes:"):
+            notes.append(b.split(":",1)[1].strip())
+        else:
+            # non-labeled bullet treat as a note
+            notes.append(b)
+    return role, significance, notes
 
-def llm_extract_and_add(text):
+def load_static_lore_files(file_paths=None):
     """
-    Use an LLM (if available) to extract structured lore and add it to session_state.
-    Returns the extracted dict (or heuristic dict on fallback).
+    Read and parse markdown files into the runtime lore repository.
+    Default file list (relative to repo root):
+      - lore_and_knowledge.md
+      - gm_guide.md
+      - narrative_directions.md
+      - story_elements.md
+
+    This function is idempotent per session (it sets st.session_state.lore_static_loaded).
     """
     init_lore()
-    if not text:
-        return {}
-    try:
-        extracted = llm_extract(text)
-    except Exception as e:
-        _log.debug("LLM extraction failed, falling back to heuristics: %s", e)
-        extracted = auto_extract_and_add(text) or {"source": "heuristic"}
+    if st.session_state.get("lore_static_loaded"):
+        _log.debug("Static lore already loaded for this session; skipping.")
+        return {"loaded": False, "reason": "already_loaded"}
 
-    # Merge persons
-    persons = extracted.get("persons") or []
-    for p in persons:
-        name = p.get("name")
-        role = p.get("role")
-        sig = p.get("significance") or ""
-        notes = p.get("notable_notes") or []
-        tags = p.get("tags") or []
-        if name:
-            add_person(name.strip(), role=role, significance=sig, note="LLM: " + "; ".join(notes) if notes else None, tags=tags)
+    default_files = ["lore_and_knowledge.md", "gm_guide.md", "narrative_directions.md", "story_elements.md"]
+    files = file_paths if file_paths else default_files
+    repo_root = Path(".")
+    loaded_files = []
+    for f in files:
+        p = repo_root / f
+        if not p.exists():
+            _log.debug("Static lore file not found: %s", p)
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+        except Exception as e:
+            _log.debug("Failed to read %s: %s", p, e)
+            continue
+        parsed = _parse_markdown_entries(text)
+        # Merge parsed entries into lore
+        for section, entries in parsed.items():
+            sec_lower = section.strip().lower()
+            # Vexal / Core / Lore sections
+            if "vexal" in sec_lower or "core" in sec_lower or "lore" in sec_lower:
+                for e in entries:
+                    # If entry has a description and no name, treat description as a note
+                    if e.get("name"):
+                        # Add to vexal notes if name is "Vexal" or description contains 'bastion'
+                        name = e["name"]
+                        desc = e["description"]
+                        if "vexal" in name.lower() or "vexal" in desc.lower() or "bastion" in desc.lower():
+                            # if it's the main quest description and name is Vexal or Bastion, set main_quest if not empty
+                            if "main quest" in desc.lower() or "recover" in desc.lower() or "bastion" in name.lower():
+                                st.session_state.lore["vexal"]["main_quest"] = desc
+                            else:
+                                add_vexal_note(f"{name}: {desc}")
+                        else:
+                            add_vexal_note(f"{name}: {desc}")
+                    for b in e.get("bullets", []):
+                        add_vexal_note(b)
+            elif "person" in sec_lower or "npc" in sec_lower or "people" in sec_lower:
+                for e in entries:
+                    name = e.get("name") or ""
+                    if not name:
+                        continue
+                    role, significance, notes = _extract_role_significance(e.get("bullets", []))
+                    tags = _extract_tags_from_bullets(e.get("bullets", []))
+                    add_person(name, role=role, significance=significance, note="; ".join(notes) if notes else (e.get("description") or None), tags=tags)
+            elif "location" in sec_lower or "place" in sec_lower or "site" in sec_lower or "city" in sec_lower:
+                for e in entries:
+                    name = e.get("name") or ""
+                    if not name:
+                        continue
+                    desc = e.get("description") or ""
+                    role, significance, notes = _extract_role_significance(e.get("bullets", []))
+                    tags = _extract_tags_from_bullets(e.get("bullets", []))
+                    add_location(name, description=(desc + (" " + "; ".join(notes) if notes else "")).strip(), tags=tags)
+            elif "faction" in sec_lower or "order" in sec_lower:
+                for e in entries:
+                    name = e.get("name") or ""
+                    if not name:
+                        continue
+                    desc = e.get("description") or ""
+                    tags = _extract_tags_from_bullets(e.get("bullets", []))
+                    st.session_state.lore["factions"].setdefault(name, {"description": desc, "tags": tags})
+                    if tags:
+                        for t in tags:
+                            st.session_state.lore["tags"].add(t)
+            else:
+                # Generic: try to infer person/location or add to vexal notes
+                for e in entries:
+                    name = e.get("name")
+                    desc = e.get("description", "")
+                    if name:
+                        # Heuristic: if description contains 'keeper','scholar','priest','captain','lord' -> person
+                        if any(k in desc.lower() for k in ("scholar", "priest", "captain", "lord", "merchant", "clerk", "archiv")):
+                            add_person(name, note=desc)
+                        else:
+                            add_location(name, description=desc)
+                    else:
+                        # a stray description; append as vexal note because it's general lore
+                        add_vexal_note(desc)
 
-    # Merge locations
-    locs = extracted.get("locations") or []
-    for l in locs:
-        name = l.get("name")
-        desc = l.get("description") or ""
-        tags = l.get("tags") or []
-        if name:
-            add_location(name.strip(), description="LLM: " + desc if desc else None, tags=tags)
-
-    # Merge factions
-    factions = extracted.get("factions") or []
-    for f in factions:
-        name = f.get("name")
-        desc = f.get("description") or ""
-        if name:
-            st.session_state.lore["factions"].setdefault(name, {"description": desc, "tags": f.get("tags", [])})
-
-    # Merge tags and vexal_updates
-    tgs = extracted.get("tags") or []
-    if tgs:
-        st.session_state.lore["tags"].update(tgs)
-    vex = extracted.get("vexal_updates") or []
-    for v in vex:
-        if v:
-            add_vexal_note("LLM: " + v)
-
-    # Return the extraction dict so callers can access time_advance etc.
-    return extracted or {"source": "heuristic"}
+        loaded_files.append(str(p))
+    st.session_state.lore_static_loaded = True
+    return {"loaded": True, "files": loaded_files}
