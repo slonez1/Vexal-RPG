@@ -136,3 +136,51 @@ def advance_game_time(turns=1):
     dt += timedelta(hours=hours)
     gs["game_datetime"] = dt.isoformat()
     return format_game_datetime(gs)
+
+def advance_game_time_delta(hours=0, seconds=0):
+    """
+    Advance in-game time by an arbitrary hours and seconds delta, persist to game_state.
+    """
+    gs = st.session_state.game_state
+    dt = parse_game_datetime(gs)
+    dt += timedelta(hours=hours, seconds=seconds)
+    gs["game_datetime"] = dt.isoformat()
+    return format_game_datetime(gs)
+
+def apply_time_spec(time_spec):
+    """
+    Accepts a structured time spec (dict) and applies it.
+    Expected formats:
+      {"seconds": 6}
+      {"hours": 4}
+      {"hours_per_turn": 0.1}  # update the default hours per turn for future turns
+      {"scale": "combat", "seconds_per_turn": 6}
+    Returns the formatted new game_datetime.
+    """
+    gs = st.session_state.game_state
+    if not isinstance(time_spec, dict):
+        return format_game_datetime(gs)
+    # If LLM suggests updating hours_per_turn base (affects future turns)
+    if "hours_per_turn" in time_spec:
+        try:
+            gs["hours_per_turn"] = float(time_spec["hours_per_turn"])
+        except Exception:
+            pass
+    # If explicit seconds/hours provided -> apply delta now
+    seconds = int(time_spec.get("seconds", 0) or time_spec.get("seconds", 0))
+    hours = float(time_spec.get("hours", 0) or time_spec.get("hours", 0.0))
+    # support scale shortcuts
+    if "scale" in time_spec:
+        if time_spec["scale"] == "combat":
+            # default combat: seconds_per_turn (if provided) else 6s
+            seconds = int(time_spec.get("seconds_per_turn", time_spec.get("seconds", 6)))
+        if time_spec["scale"] == "travel":
+            # travel: maybe hours per turn
+            hours = float(time_spec.get("hours_per_turn", time_spec.get("hours", gs.get("hours_per_turn", 6))))
+    # If seconds specified, apply seconds; if hours specified, apply hours; if none, fallback to hours_per_turn
+    if seconds:
+        return advance_game_time_delta(seconds=seconds)
+    if hours:
+        return advance_game_time_delta(hours=hours)
+    # no explicit delta -> use default hours_per_turn once
+    return advance_game_time(turns=1)
