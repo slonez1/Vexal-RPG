@@ -80,4 +80,221 @@ CONDITION_EFFECTS = {
         "effects": {"mana_regen": 0.5}
     },
     "Divine Favor": {
-        "
+        "color": "#ffd700",
+        "desc": "Blessed by divine power - 25% mana cost reduction",
+        "type": "buff",
+        "effects": {"spell_cost_multiplier": 0.75}
+    },
+    "Blessed": {
+        "color": "#28a745",
+        "desc": "Holy protection increases WIS by 3",
+        "type": "buff",
+        "effects": {"WIS": 3}
+    },
+    "Haste": {
+        "color": "#00bcd4",
+        "desc": "Supernatural speed increases DEX by 4",
+        "type": "buff",
+        "effects": {"DEX": 4, "movement_speed": 1.5}
+    },
+    "Vexal Active": {
+        "color": "#e83e8c",
+        "desc": "Corrupting influence suppresses all attributes",
+        "type": "debuff",
+        "effects": {"all_attrs": -2, "pool_penalty": -20}
+    }
+}
+
+# --- CONDITION TIMER MANAGEMENT ---
+def update_condition_timers():
+    """Decrement timers and remove expired conditions"""
+    expired = []
+    for condition, turns_left in st.session_state.condition_timers.items():
+        if turns_left <= 0:
+            expired.append(condition)
+            if condition in gs['conditions']:
+                del gs['conditions'][condition]
+        else:
+            st.session_state.condition_timers[condition] -= 1
+    
+    for cond in expired:
+        del st.session_state.condition_timers[cond]
+
+# --- GM AI & TTS ---
+def get_gm_response(prompt):
+    update_condition_timers()  # Decrement timers on each action
+    return f"Narrative: Amara acts upon '{prompt}'. (Vexal influence detected)."
+
+def trigger_tts(text):
+    if st.session_state.tts_enabled:
+        # Optimized TTS with faster rate
+        clean_text = text.replace("'", "\\'").replace("\n", " ")
+        st.components.v1.html(f"<script>speak('{clean_text}');</script>", height=0)
+
+# --- MATH ENGINE: FIXED DEX CALCULATION WITH BUFFS/DEBUFFS ---
+@st.cache_data(ttl=1, show_spinner=False)
+def get_effective_stats(_gs_dict):
+    """Cached calculation of effective stats with all modifiers"""
+    eff_attr = _gs_dict['attributes'].copy()
+    pool_mod = 0
+    hp_max_penalty = 0
+    stamina_drain = 0
+    spell_cost_multiplier = 1.0
+    movement_speed = 1.0
+    mana_regen = 1.0
+    
+    # Apply condition effects
+    for condition in _gs_dict['conditions'].keys():
+        if condition in CONDITION_EFFECTS:
+            effects = CONDITION_EFFECTS[condition]['effects']
+            
+            # Attribute modifiers
+            for attr in ['STR', 'DEX', 'CON', 'WIS', 'CHA']:
+                if attr in effects:
+                    eff_attr[attr] += effects[attr]
+            
+            # All attributes modifier (Vexal)
+            if 'all_attrs' in effects:
+                for attr in eff_attr:
+                    eff_attr[attr] += effects['all_attrs']
+            
+            # Pool penalties
+            if 'pool_penalty' in effects:
+                pool_mod += effects['pool_penalty']
+            
+            if 'hp_max_penalty' in effects:
+                hp_max_penalty += effects['hp_max_penalty']
+            
+            if 'stamina_drain' in effects:
+                stamina_drain += effects['stamina_drain']
+            
+            if 'spell_cost_multiplier' in effects:
+                spell_cost_multiplier *= effects['spell_cost_multiplier']
+            
+            if 'movement_speed' in effects:
+                movement_speed *= effects['movement_speed']
+            
+            if 'mana_regen' in effects:
+                mana_regen *= effects['mana_regen']
+    
+    # Apply Armor DEX Penalties ONCE
+    for slot in ['Head', 'Torso', 'Legs', 'Hands', 'OffHand']:
+        if slot in _gs_dict['equipment'] and _gs_dict['equipment'][slot].get('type') == 'Armor':
+            mat = _gs_dict['equipment'][slot]['material']
+            eff_attr['DEX'] += MAT_PROPS.get(mat, {}).get('Dex_Penalty', 0)
+    
+    return {
+        'attributes': eff_attr,
+        'pool_mod': pool_mod,
+        'hp_max_penalty': hp_max_penalty,
+        'stamina_drain': stamina_drain,
+        'spell_cost_multiplier': spell_cost_multiplier,
+        'movement_speed': movement_speed,
+        'mana_regen': mana_regen
+    }
+
+# Convert gs to dict for caching (session_state objects aren't hashable)
+gs_dict = dict(gs)
+stats = get_effective_stats(gs_dict)
+eff_attr = stats['attributes']
+p_mod = stats['pool_mod']
+hp_max_penalty = stats['hp_max_penalty']
+stamina_drain = stats['stamina_drain']
+spell_cost_multiplier = stats['spell_cost_multiplier']
+movement_speed = stats['movement_speed']
+mana_regen = stats['mana_regen']
+
+cur_hp_m = gs['hp_max'] + p_mod + hp_max_penalty
+cur_sta_m = gs['stamina_max'] + p_mod
+cur_mana_m = gs['mana_max'] + p_mod
+
+# Apply stamina drain
+gs['stamina'] = max(0, gs['stamina'] - stamina_drain)
+
+# --- SIDEBAR (IMMUTABLE) ---
+def custom_bar(label, current, maximum, color):
+    percent = min(100, max(0, (current / maximum) * 100))
+    st.sidebar.markdown(f"<div style='display:flex;justify-content:space-between;font-size:0.7rem;font-weight:bold;margin-bottom:2px;'><span>{label}</span><span>{int(current)}/{maximum}</span></div><div class='bar-container'><div class='bar-fill' style='width:{percent}%;background-color:{color};'></div></div>", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.title(f"🛡️ {gs['name']}")
+    custom_bar("❤️ HEALTH", gs['hp'], cur_hp_m, "#ff4b4b")
+    custom_bar("⚡ STAMINA", gs['stamina'], cur_sta_m, "#28a745")
+    custom_bar("✨ MANA", gs['mana'], cur_mana_m, "#007bff")
+    st.markdown("<hr style='border:1px solid #444;margin:15px 0;'>", unsafe_allow_html=True)
+    custom_bar("⚖️ DIVINE FAVOR", gs['divine_favor'], 100, "#fd7e14")
+    
+    # Active Conditions Display
+    if gs['conditions']:
+        st.markdown("**Active Effects:**")
+        for condition in gs['conditions'].keys():
+            if condition in CONDITION_EFFECTS:
+                cond_data = CONDITION_EFFECTS[condition]
+                badge_class = "buff-badge" if cond_data['type'] == "buff" else "debuff-badge-red"
+                timer_text = ""
+                if condition in st.session_state.condition_timers:
+                    timer_text = f" ({st.session_state.condition_timers[condition]} turns)"
+                st.markdown(f"<span class='debuff-badge {badge_class}'>{condition}{timer_text}</span>", unsafe_allow_html=True)
+    
+    st.write("### Attributes")
+    a_cols = st.columns(3)
+    for i, (attr, base) in enumerate(gs['attributes'].items()):
+        val = eff_attr[attr]
+        diff = val - base
+        clr = "#ff4b4b" if diff < 0 else "#28a745" if diff > 0 else "#eee"
+        sign = "+" if diff > 0 else ""
+        a_cols[i%3].markdown(f"<div class='attr-box'><div class='attr-label'>{attr}</div><div class='attr-val' style='color:{clr};'>{val} ({sign}{diff})</div></div>", unsafe_allow_html=True)
+    
+    st.divider()
+    st.markdown(f"**Vaxel:** `{gs['vaxel_state']}`")
+    custom_bar("💓 AROUSAL", gs['arousal'], 100, "#e83e8c")
+    boxes = "".join(["▣" if i < gs['orgasm_count'] else "▢" for i in range(10)])
+    st.markdown(f"**Subjugation Peak:** <span style='color:#e83e8c;'>{boxes}</span>", unsafe_allow_html=True)
+    
+    # Movement Speed Indicator
+    if movement_speed != 1.0:
+        speed_pct = int(movement_speed * 100)
+        speed_color = "#28a745" if movement_speed > 1.0 else "#ff4b4b"
+        st.markdown(f"**🏃 Movement:** <span style='color:{speed_color};'>{speed_pct}%</span>", unsafe_allow_html=True)
+
+# --- TABS ---
+tab_con, tab_stat, tab_char, tab_inv, tab_sett = st.tabs(["📜 CONSOLE", "🩹 STATUS", "👤 CHARACTER", "🎒 INVENTORY", "⚙️ SETTINGS"])
+
+with tab_stat:
+    # 1. Condition Overview
+    st.subheader("🩹 Active Conditions")
+    if not gs['conditions']:
+        st.info("Amara is currently free of any debilitating conditions.")
+    else:
+        for condition, effect in gs['conditions'].items():
+            if condition in CONDITION_EFFECTS:
+                cond_data = CONDITION_EFFECTS[condition]
+                timer_info = ""
+                if condition in st.session_state.condition_timers:
+                    timer_info = f" - **{st.session_state.condition_timers[condition]} turns remaining**"
+                
+                if cond_data['type'] == "buff":
+                    st.success(f"✨ **{condition}**: {cond_data['desc']}{timer_info}")
+                else:
+                    st.warning(f"⚠️ **{condition}**: {cond_data['desc']}{timer_info}")
+            else:
+                st.warning(f"**{condition}**: {effect}")
+
+    st.divider()
+
+    # 2. Saving Throws Logic
+    st.subheader("🎲 Saving Throws")
+    st.caption("Base defense against physical, mental, and magical hazards.")
+    
+    save_cols = st.columns(3)
+    save_list = [
+        ("Fortitude", "CON", "Physical resilience"),
+        ("Reflex", "DEX", "Reaction speed"),
+        ("Willpower", "WIS", "Mental fortitude"),
+        ("Acrobatics", "DEX", "Balance and poise"),
+        ("Insight", "WIS", "Detecting deception"),
+        ("Presence", "CHA", "Force of personality")
+    ]
+
+    level_bonus = gs['level'] // 2
+    for i, (save_name, attr_key, hint) in enumerate(save_list):
