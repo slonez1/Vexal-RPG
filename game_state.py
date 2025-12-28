@@ -2,11 +2,12 @@ import streamlit as st
 from copy import deepcopy
 from data import INITIAL_GAME_STATE, MAT_PROPS
 from conditions import CONDITION_EFFECTS
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def init_session_state():
     """
-    Initialize session_state keys used by the app.
+    Initialize all session_state keys used by the app.
+    Preserves existing data keys and backfills missing compatibility fields.
     """
     if "game_state" not in st.session_state:
         st.session_state.game_state = deepcopy(INITIAL_GAME_STATE)
@@ -31,6 +32,12 @@ def init_session_state():
         gs["experience"] = 0
     if "experience_next" not in gs:
         gs["experience_next"] = 100
+    # Game time: persistent in game_state so saves include it
+    if "game_datetime" not in gs:
+        # Default in-game epoch (customizable)
+        gs["game_datetime"] = datetime(1000, 1, 1, 8, 0).isoformat()
+    if "hours_per_turn" not in gs:
+        gs["hours_per_turn"] = 6  # default: 6 in-game hours per player turn
 
 def update_condition_timers():
     """Decrement timers and remove expired conditions from game_state."""
@@ -101,3 +108,31 @@ def get_effective_stats(_gs_dict):
 def get_gs_copy():
     """Return a shallow dict copy of the live game_state for caching calls and safe reads."""
     return dict(st.session_state.game_state)
+
+# ----------------- In-Game Time Utilities -----------------
+def parse_game_datetime(gs):
+    """Return a datetime from the stored ISO string in game_state (gs dict)."""
+    val = gs.get("game_datetime")
+    try:
+        return datetime.fromisoformat(val)
+    except Exception:
+        # fallback to epoch
+        return datetime(1000,1,1,8,0)
+
+def format_game_datetime(gs):
+    """Return a human-friendly in-game date/time string."""
+    dt = parse_game_datetime(gs)
+    # Example format: Year 1000-01-01 08:00
+    return dt.strftime("Year %Y-%m-%d %H:%M")
+
+def advance_game_time(turns=1):
+    """
+    Advance in-game time by (hours_per_turn * turns) hours, persists to session_state.game_state.
+    Returns the new formatted time.
+    """
+    gs = st.session_state.game_state
+    hours = int(gs.get("hours_per_turn", 6)) * int(turns)
+    dt = parse_game_datetime(gs)
+    dt += timedelta(hours=hours)
+    gs["game_datetime"] = dt.isoformat()
+    return format_game_datetime(gs)
