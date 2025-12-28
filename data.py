@@ -1,6 +1,4 @@
 # data.py
-import json
-
 MAT_PROPS = {
     "Leather": {"DT": 1, "Weight": 0.5, "Noise": -1, "Dex_Penalty": 0},
     "Steel":   {"DT": 5, "Weight": 1.0, "Noise": -8, "Dex_Penalty": -2},
@@ -11,14 +9,14 @@ MAT_PROPS = {
 }
 
 FEAT_LIBRARY = {
-    "Aegis of Light": {"desc": "Permanent +10 Max HP and +5 Holy skill.", "hp": 10, "skill": ("Mystical", "Holy", 5)},
-    "Vaxel Synchronicity": {"desc": "Reduce Arousal gain by 20% and +2 WIS.", "attr": ("WIS", 2)},
-    "Bladed Dancer": {"desc": "Ignore Dex penalties from Steel and +2 DEX.", "attr": ("DEX", 2)},
-    "Divine Bastion": {"desc": "+2 CON and +2 to all Saving Throws.", "attr": ("CON", 2)},
-    "Scholar of the Void": {"desc": "+2 INT; unlock 'Void Navigation' skill.", "attr": ("INT", 2)},
-    "Iron Lung": {"desc": "+20 Max Stamina for long engagements.", "stamina": 20},
-    "Titan's Grip": {"desc": "Use Two-Handed weapons in one hand; +2 STR.", "attr": ("STR", 2)},
-    "Shadow Weaver": {"desc": "Permanent +10 to Stealth; -5 to Noise.", "skill": ("Subterfuge", "Stealth", 10)}
+    "Aegis of Light": "Permanent +10 Max HP and +5 Holy skill.",
+    "Vaxel Synchronicity": "Reduce Arousal gain by 20% and +2 WIS.",
+    "Bladed Dancer": "Ignore Dex penalties from Steel and +2 DEX.",
+    "Divine Bastion": "+2 CON and +2 to all Saving Throws.",
+    "Scholar of the Void": "+2 INT; unlock 'Void Navigation' skill.",
+    "Iron Lung": "+20 Max Stamina for long engagements.",
+    "Titan's Grip": "Use Two-Handed weapons in one hand; +2 STR.",
+    "Shadow Weaver": "Permanent +10 to Stealth; -5 to Noise."
 }
 
 INITIAL_GAME_STATE = {
@@ -44,5 +42,5 @@ INITIAL_GAME_STATE = {
     'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Lesser Heal'],
     'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Lesser Heal': 12},
     'inventory': {'containers': {'Satchel': ['Whetstone', 'Holy Oil']}, 'currency': {'Silver': 150}},
-    'prev_eff': {} # For notification tracking
+    'prev_eff': {}
 }
