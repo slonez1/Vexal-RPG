@@ -18,13 +18,10 @@ def init_session_state():
         st.session_state.tts_enabled = True
     if "condition_timers" not in st.session_state:
         st.session_state.condition_timers = {}
-    # Backfill skills_exp and unified experience key if absent (compat with older saves)
+    # Backfill skills_exp if absent
     gs = st.session_state.game_state
     if "skills_exp" not in gs:
         gs["skills_exp"] = {cat: {s: 0 for s in sks.keys()} for cat, sks in gs.get("skills", {}).items()}
-    if "experience" not in gs:
-        # prefer 'xp' if present
-        gs["experience"] = gs.get("xp", 0)
 
 def update_condition_timers():
     """Decrement timers and remove expired conditions from game_state."""
