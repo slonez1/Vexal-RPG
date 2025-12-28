@@ -214,8 +214,63 @@ with tab_inv:
             st.progress(d['cond']/100, text=f"Condition: {d['cond']}%")
 
 with tab_sett:
-    st.session_state.tts_enabled = st.toggle("🔊 Text-to-Speech", value=st.session_state.tts_enabled)
-    if st.button("⬅️ UNDO TURN", use_container_width=True):
-        if len(st.session_state.messages) >= 2: st.session_state.messages = st.session_state.messages[:-2]; st.rerun()
-    if st.button("⚠️ RESET ADVENTURE", use_container_width=True):
-        st.session_state.game_state = INITIAL_GAME_STATE.copy(); st.session_state.messages = []; st.rerun()
+    st.subheader("🛠️ System Controls")
+    
+    # 1. UNDO TURN (Logic Integrity)
+    if st.button("⬅️ UNDO LAST TURN", use_container_width=True, help="Reverts the last player action and GM response."):
+        if len(st.session_state.messages) >= 2:
+            st.session_state.messages = st.session_state.messages[:-2]
+            st.rerun()
+        else:
+            st.toast("No turns left to undo!", icon="🚫")
+
+    # 2. SAVE / LOAD (The Missing Persistence Logic)
+    st.divider()
+    st.subheader("💾 Game Persistence")
+    col_save, col_load = st.columns(2)
+    
+    with col_save:
+        # Serializes current game_state into a JSON file for download
+        save_data = json.dumps(gs, indent=4)
+        st.download_button(
+            label="DOWNLOAD SAVE (.json)",
+            data=save_data,
+            file_name=f"vexal_save_{gs['name']}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+        st.caption("Exports your current stats, inventory, and Vexal state.")
+
+    with col_load:
+        # Handles the file upload and updates the session state
+        uploaded_file = st.file_uploader("UPLOAD SAVE (.json)", type=["json"], label_visibility="collapsed")
+        if uploaded_file is not None:
+            try:
+                new_state = json.load(uploaded_file)
+                # Validation check: Ensure it's a valid Vexal save
+                if "vaxel_state" in new_state and "attributes" in new_state:
+                    st.session_state.game_state = new_state
+                    st.success("Save Loaded! Refreshing...")
+                    time.sleep(1) # Visual feedback before rerun
+                    st.rerun()
+                else:
+                    st.error("Invalid save file format.")
+            except Exception as e:
+                st.error(f"Error loading save: {e}")
+
+    # 3. ACCESSIBILITY & RESET (TTS Persistence)
+    st.divider()
+    col_acc, col_rst = st.columns(2)
+    
+    with col_acc:
+        st.session_state.tts_enabled = st.toggle(
+            "🔊 Text-to-Speech (HTML5)", 
+            value=st.session_state.tts_enabled,
+            help="Toggle automatic reading of GM responses."
+        )
+
+    with col_rst:
+        if st.button("⚠️ RESET ADVENTURE", use_container_width=True, help="Permanently wipes current progress."):
+            st.session_state.game_state = INITIAL_GAME_STATE.copy()
+            st.session_state.messages = []
+            st.rerun()
