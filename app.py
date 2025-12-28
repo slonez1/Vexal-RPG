@@ -86,6 +86,76 @@ with st.sidebar:
 # --- TABS ---
 tab_con, tab_stat, tab_char, tab_inv, tab_sett = st.tabs(["📜 CONSOLE", "🩹 STATUS", "👤 CHARACTER", "🎒 INVENTORY", "⚙️ SETTINGS"])
 
+with tab_stat:
+    # 1. Condition Overview
+    st.subheader("🩹 Active Conditions")
+    if not gs['conditions']:
+        st.info("Amara is currently free of any debilitating conditions.")
+    else:
+        for condition, effect in gs['conditions'].items():
+            # Use warning style for negative conditions
+            st.warning(f"**{condition}**: {effect}")
+
+    st.divider()
+
+    # 2. Saving Throws Logic
+    # Formula: (Effective Attribute) + (Level // 2)
+    st.subheader("🎲 Saving Throws")
+    st.caption("Base defense against physical, mental, and magical hazards.")
+    
+    save_cols = st.columns(3)
+    save_list = [
+        ("Fortitude", "CON", "Physical resilience"),
+        ("Reflex", "DEX", "Reaction speed"),
+        ("Willpower", "WIS", "Mental fortitude"),
+        ("Acrobatics", "DEX", "Balance and poise"),
+        ("Insight", "WIS", "Detecting deception"),
+        ("Presence", "CHA", "Force of personality")
+    ]
+
+    level_bonus = gs['level'] // 2
+    for i, (save_name, attr_key, hint) in enumerate(save_list):
+        # Calculate save based on the effective attributes (which already include Vexal/Armor penalties)
+        total_save = eff_attr[attr_key] + level_bonus
+        with save_cols[i % 3]:
+            st.metric(
+                label=save_name, 
+                value=f"+{total_save}", 
+                delta=f"Attr: {eff_attr[attr_key]} | Lvl: {level_bonus}",
+                delta_color="off",
+                help=hint
+            )
+
+    st.divider()
+
+    # 3. Vexal State Mechanics
+    st.subheader("🧬 Vexal Influence Breakdown")
+    v_col1, v_col2 = st.columns(2)
+    
+    with v_col1:
+        st.markdown("**Attribute Suppression:**")
+        st.code("-2 to all Base Attributes (Applied)", language="diff")
+        st.markdown("**Pool Suppression:**")
+        st.code("-20 Max HP\n-20 Max Stamina\n-20 Max Mana", language="diff")
+
+    with v_col2:
+        # Visualizing the Subjugation risk
+        st.markdown(f"**Subjugation Peak:** `{gs['orgasm_count']}/10` overflows")
+        peak_progress = (gs['orgasm_count'] / 10)
+        st.progress(peak_progress)
+        if gs['orgasm_count'] >= 7:
+            st.error("⚠️ HIGH RISK: Vexal state nearing Subjugation threshold.")
+        else:
+            st.success("Vexal state currently manageable.")
+
+    # 4. Resistances (If applicable)
+    st.divider()
+    st.subheader("🛡️ Resistances")
+    r_col1, r_col2, r_col3 = st.columns(3)
+    r_col1.write("**Holy:** 25%")
+    r_col2.write("**Void:** -10%")
+    r_col3.write("**Physical:** 5%")
+    
 with tab_con:
     c_win = st.container(height=350)
     with c_win:
