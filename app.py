@@ -296,5 +296,221 @@ with tab_stat:
         ("Presence", "CHA", "Force of personality")
     ]
 
-    level_bonus = gs['level'] // 2
+        level_bonus = gs['level'] // 2
     for i, (save_name, attr_key, hint) in enumerate(save_list):
+        total_save = eff_attr[attr_key] + level_bonus
+        with save_cols[i % 3]:
+            st.metric(
+                label=save_name, 
+                value=f"+{total_save}", 
+                delta=f"Attr: {eff_attr[attr_key]} | Lvl: {level_bonus}",
+                delta_color="off",
+                help=hint
+            )
+
+    st.divider()
+
+    # 3. Vexal State Mechanics
+    st.subheader("🧬 Vexal Influence Breakdown")
+    v_col1, v_col2 = st.columns(2)
+    
+    with v_col1:
+        st.markdown("**Attribute Suppression:**")
+        st.code("-2 to all Base Attributes (Applied)", language="diff")
+        st.markdown("**Pool Suppression:**")
+        st.code("-20 Max HP\n-20 Max Stamina\n-20 Max Mana", language="diff")
+
+    with v_col2:
+        st.markdown(f"**Subjugation Peak:** `{gs['orgasm_count']}/10` overflows")
+        peak_progress = (gs['orgasm_count'] / 10)
+        st.progress(peak_progress)
+        if gs['orgasm_count'] >= 7:
+            st.error("⚠️ HIGH RISK: Vexal state nearing Subjugation threshold.")
+        else:
+            st.success("Vexal state currently manageable.")
+
+    # 4. Resistances
+    st.divider()
+    st.subheader("🛡️ Resistances")
+    r_col1, r_col2, r_col3 = st.columns(3)
+    r_col1.write("**Holy:** 25%")
+    r_col2.write("**Void:** -10%")
+    r_col3.write("**Physical:** 5%")
+    
+    # 5. Spell Cost Modifiers
+    if spell_cost_multiplier != 1.0:
+        st.divider()
+        st.subheader("✨ Spell Casting Modifiers")
+        cost_pct = int(spell_cost_multiplier * 100)
+        if spell_cost_multiplier < 1.0:
+            st.success(f"🌟 Divine Favor Active: Spell costs reduced to **{cost_pct}%**")
+        else:
+            st.warning(f"⚠️ Spell costs increased to **{cost_pct}%**")
+
+with tab_con:
+    c_win = st.container(height=350)
+    with c_win:
+        for m in st.session_state.messages:
+            with st.chat_message(m["role"]): 
+                st.markdown(m["content"])
+    
+    st.write("---")
+    d1, d2, d3 = st.columns(3)
+    with d1:
+        sk_list = sorted([s for cat in gs['skills'].values() for s in cat.keys()])
+        sk = st.selectbox("Skills", sk_list, label_visibility="collapsed")
+        if st.button("💪 Add Skill Tag", use_container_width=True): 
+            st.session_state.cmd_buffer = f"[Use Skill: {sk}] "
+            st.rerun()
+    with d2:
+        sp = st.selectbox("Spells", gs['known_spells'], label_visibility="collapsed")
+        if st.button("✨ Add Spell Tag", use_container_width=True): 
+            st.session_state.cmd_buffer = f"[Use Spell: {sp}] "
+            st.rerun()
+    with d3:
+        imp = st.text_input("Impromptu", placeholder="Action...", label_visibility="collapsed")
+        if st.button("🚀 Execute", use_container_width=True):
+            if imp:
+                full = f"🛠️ [IMPROMPTU]: {imp}"
+                st.session_state.messages.append({"role": "user", "content": full})
+                res = get_gm_response(full)
+                st.session_state.messages.append({"role": "assistant", "content": res})
+                trigger_tts(res)
+                st.rerun()
+
+    direct = st.chat_input("Direct Command...")
+    if direct:
+        full = st.session_state.cmd_buffer + direct
+        st.session_state.messages.append({"role": "user", "content": full})
+        st.session_state.cmd_buffer = ""
+        res = get_gm_response(full)
+        st.session_state.messages.append({"role": "assistant", "content": res})
+        trigger_tts(res)
+        st.rerun()
+
+with tab_char:
+    st.subheader("Mastered Skills")
+    for cat, sks in gs['skills'].items():
+        with st.expander(f"{cat} Mastery"):
+            c1, c2 = st.columns(2)
+            for i, (s, r) in enumerate(sks.items()): 
+                (c1 if i%2==0 else c2).write(f"**{s}**: {r}")
+    
+    st.divider()
+    st.subheader("✨ Spellbook")
+    sp1, sp2 = st.columns(2)
+    for i, spn in enumerate(gs['known_spells']):
+        base_cost = gs['mana_costs'].get(spn, 0)
+        effective_cost = int(base_cost * spell_cost_multiplier)
+        cost_display = f"{effective_cost} MP"
+        if effective_cost != base_cost:
+            cost_display += f" (base: {base_cost})"
+        (sp1 if i%2==0 else sp2).info(f"**{spn}** ({cost_display})")
+
+with tab_inv:
+    st.subheader("Equipment Detail")
+    for slot, d in gs['equipment'].items():
+        with st.container(border=True):
+            props = MAT_PROPS.get(d['material'], {})
+            st.markdown(f"**Slot:** `{slot}` | **Item:** {d['item']} | **Material:** {d['material']}")
+            col_a, col_b, col_c = st.columns(3)
+            col_a.write(f"🛡️ AC (DT): {props.get('DT', 'N/A')}")
+            col_b.write(f"⚖️ Weight: {props.get('Weight', '0')} lbs")
+            col_c.write(f"🔊 Noise: {props.get('Noise', '0')}")
+            st.progress(d['cond']/100, text=f"Condition: {d['cond']}%")
+
+with tab_sett:
+    st.subheader("🛠️ System Controls")
+    
+    # 1. UNDO TURN
+    if st.button("⬅️ UNDO LAST TURN", use_container_width=True, help="Reverts the last player action and GM response."):
+        if len(st.session_state.messages) >= 2:
+            st.session_state.messages = st.session_state.messages[:-2]
+            st.rerun()
+        else:
+            st.toast("No turns left to undo!", icon="🚫")
+
+    # 2. CONDITION MANAGEMENT
+    st.divider()
+    st.subheader("🩹 Condition Manager")
+    
+    col_add, col_remove = st.columns(2)
+    
+    with col_add:
+        st.markdown("**Add Condition:**")
+        new_cond = st.selectbox("Select Condition", list(CONDITION_EFFECTS.keys()), key="add_cond")
+        duration = st.number_input("Duration (turns)", min_value=1, max_value=99, value=5, key="cond_duration")
+        if st.button("➕ Apply Condition", use_container_width=True):
+            gs['conditions'][new_cond] = CONDITION_EFFECTS[new_cond]['desc']
+            st.session_state.condition_timers[new_cond] = duration
+            st.success(f"Applied {new_cond} for {duration} turns!")
+            time.sleep(0.5)
+            st.rerun()
+    
+    with col_remove:
+        st.markdown("**Remove Condition:**")
+        if gs['conditions']:
+            rem_cond = st.selectbox("Active Conditions", list(gs['conditions'].keys()), key="rem_cond")
+            if st.button("➖ Remove Condition", use_container_width=True):
+                del gs['conditions'][rem_cond]
+                if rem_cond in st.session_state.condition_timers:
+                    del st.session_state.condition_timers[rem_cond]
+                st.success(f"Removed {rem_cond}!")
+                time.sleep(0.5)
+                st.rerun()
+        else:
+            st.info("No active conditions to remove.")
+
+    # 3. SAVE / LOAD
+    st.divider()
+    st.subheader("💾 Game Persistence")
+    col_save, col_load = st.columns(2)
+    
+    with col_save:
+        save_data = json.dumps({
+            'game_state': gs,
+            'condition_timers': st.session_state.condition_timers
+        }, indent=4)
+        st.download_button(
+            label="DOWNLOAD SAVE (.json)",
+            data=save_data,
+            file_name=f"vexal_save_{gs['name']}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+        st.caption("Exports your current stats, inventory, and Vexal state.")
+
+    with col_load:
+        uploaded_file = st.file_uploader("UPLOAD SAVE (.json)", type=["json"], label_visibility="collapsed")
+        if uploaded_file is not None:
+            try:
+                save_obj = json.load(uploaded_file)
+                if "game_state" in save_obj and "vaxel_state" in save_obj["game_state"]:
+                    st.session_state.game_state = save_obj["game_state"]
+                    if "condition_timers" in save_obj:
+                        st.session_state.condition_timers = save_obj["condition_timers"]
+                    st.success("Save Loaded! Refreshing...")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Invalid save file format.")
+            except Exception as e:
+                st.error(f"Error loading save: {e}")
+
+    # 4. ACCESSIBILITY & RESET
+    st.divider()
+    col_acc, col_rst = st.columns(2)
+    
+    with col_acc:
+        st.session_state.tts_enabled = st.toggle(
+            "🔊 Text-to-Speech (HTML5)", 
+            value=st.session_state.tts_enabled,
+            help="Toggle automatic reading of GM responses."
+        )
+
+    with col_rst:
+        if st.button("⚠️ RESET ADVENTURE", use_container_width=True, help="Permanently wipes current progress."):
+            st.session_state.game_state = INITIAL_GAME_STATE.copy()
+            st.session_state.messages = []
+            st.session_state.condition_timers = {}
+            st.rerun()
