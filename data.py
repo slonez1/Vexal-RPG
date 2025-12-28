@@ -12,9 +12,9 @@ MAT_PROPS = {
 
 INITIAL_GAME_STATE = {
     'name': 'Amara Silvermoon', 'level': 10, 'xp': 5600, 'xp_next': 5500,
-    'hp': 230, 'hp_max': 250, 'mana': 180, 'mana_max': 200, 'stamina': 160, 'stamina_max': 180,
+    'hp': 100, 'hp_max': 250, 'mana': 30, 'mana_max': 200, 'stamina': 80, 'stamina_max': 180,
     'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vaxel_state': "Active",
-    'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
+    'attributes': {'STR': 16, 'DEX': 16, 'CON': 14, 'INT': 12, 'WIS': 20, 'CHA': 18},
     'conditions': {"Vexal Active": "(-2 to ALL Attributes, -20 to Pools)"},
     'skills': {
         'Martial': {'One-Handed': 10, 'Two-Handed': 4, 'Bladed': 7, 'Blunt': 4, 'Blocking': 5, 'Heavy Armor': 8, 'Light Armor': 3, 'Marksmanship': 3},
