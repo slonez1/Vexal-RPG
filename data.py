@@ -2,20 +2,12 @@
 import json
 
 MAT_PROPS = {
-    "Leather": {"DT": 1, "Weight": 0.5, "Noise": -1, "Dex_Penalty": 0},
-    "Steel":   {"DT": 5, "Weight": 1.0, "Noise": -8, "Dex_Penalty": -2},
-    "Mithril": {"DT": 8, "Weight": 0.1, "Noise": -3, "Dex_Penalty": 0},
-    "Aureite": {"DT": 6, "Weight": 0.5, "Noise": -5, "Dex_Penalty": -1},
-    "Silver-Steel": {"DT": 6, "Weight": 0.8, "Noise": -6, "Dex_Penalty": -1},
-    "Gold-Filigree": {"DT": 2, "Weight": 0.4, "Noise": -2, "Dex_Penalty": 0}
-}
-
-FEAT_LIBRARY = {
-    "Aegis of Light": "Permanent +10 Max HP and +5 Holy skill.",
-    "Vaxel Synchronicity": "Reduce Arousal gain by 20% and +2 WIS.",
-    "Bladed Dancer": "Ignore Dex penalties from Steel and +2 DEX.",
-    "Divine Bastion": "+2 CON and +2 to all Saving Throws.",
-    "Scholar of the Void": "+2 INT; unlock 'Void Navigation' skill."
+    "Leather": {"DT": 1, "Weight": 5, "Noise": -1, "Dex_Penalty": 0},
+    "Steel":   {"DT": 5, "Weight": 45, "Noise": -8, "Dex_Penalty": -2},
+    "Mithril": {"DT": 8, "Weight": 12, "Noise": -3, "Dex_Penalty": 0},
+    "Aureite": {"DT": 6, "Weight": 25, "Noise": -5, "Dex_Penalty": -1},
+    "Silver-Steel": {"DT": 6, "Weight": 35, "Noise": -6, "Dex_Penalty": -1},
+    "Gold-Filigree": {"DT": 2, "Weight": 8, "Noise": -2, "Dex_Penalty": 0}
 }
 
 INITIAL_GAME_STATE = {
@@ -24,13 +16,12 @@ INITIAL_GAME_STATE = {
     'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vaxel_state': "Active",
     'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
     'conditions': {"Vexal Active": "(-2 to ALL Attributes, -20 to Pools)"},
-    'feats': [],
     'skills': {
         'Martial': {'One-Handed': 10, 'Two-Handed': 4, 'Bladed': 7, 'Blunt': 4, 'Blocking': 5, 'Heavy Armor': 8, 'Light Armor': 3, 'Marksmanship': 3},
-        'Mystical': {'Holy': 10, 'Arcane': 4, 'Elemental': 3, 'Restoration': 7},
+        'Mystical': {'Holy': 10, 'Arcane': 4, 'Elemental': 3, 'Restoration': 7, 'Void Navigation': 0},
         'Professional': {'Alchemy': 2, 'Enchanting': 4, 'Survival': 4, 'Athletics': 6, 'Blacksmithing': 4},
         'Social': {'Persuasion': 3, 'Intimidation': 3, 'Insight': 10, 'Etiquette': 7},
-        'Subterfuge': {'Stealth': 2}
+        'Subterfuge': {'Stealth': 2, 'Lockpicking': 1, 'Trap Disarming': 1}
     },
     'equipment': {
         'Head': {'item': 'Blessed Circlet', 'material': 'Gold-Filigree', 'cond': 100, 'type': 'Armor'},
@@ -40,6 +31,5 @@ INITIAL_GAME_STATE = {
     },
     'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Consecrate Ground', 'Lesser Smite', 'Lesser Heal', 'Purify Flesh', 'Stamina Surge'],
     'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Consecrate Ground': 20, 'Lesser Smite': 10, 'Lesser Heal': 12, 'Purify Flesh': 10, 'Stamina Surge': 10},
-    'inventory': {'currency': {'Silver': 150}},
-    'prev_eff': {}
+    'inventory': {'currency': {'Silver': 150}}
 }
