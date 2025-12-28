@@ -9,7 +9,10 @@ from game_state import (
     init_session_state,
     update_condition_timers,
     get_effective_stats,
-    get_gs_copy
+    get_gs_copy,
+    advance_game_time,
+    apply_time_spec,
+    format_game_datetime
 )
 from ui_components import custom_bar, render_condition_badge
 from gm_ai import get_gm_response, trigger_tts
@@ -75,6 +78,77 @@ cur_mana_m = gs.get('mana_max', 0) + p_mod
 # Apply stamina drain (preserve original behaviour)
 gs['stamina'] = max(0, gs.get('stamina', 0) - stamina_drain)
 
+# --- Serialization helpers for lore (avoid set -> JSON issue) ---
+def serialize_lore_for_save(lore_obj):
+    """Return a JSON-serializable copy of lore (convert sets to lists)."""
+    if not lore_obj:
+        return {}
+    out = {
+        "vexal": {
+            "main_quest": lore_obj.get("vexal", {}).get("main_quest", ""),
+            "notes": list(lore_obj.get("vexal", {}).get("notes", []))
+        },
+        "persons": {},
+        "locations": {},
+        "factions": {},
+        "tags": list(lore_obj.get("tags", [])) if lore_obj.get("tags") is not None else []
+    }
+    # persons
+    for name, info in lore_obj.get("persons", {}).items():
+        out["persons"][name] = {
+            "role": info.get("role", ""),
+            "significance": info.get("significance", ""),
+            "notes": list(info.get("notes", [])),
+            "tags": list(info.get("tags", []))
+        }
+    # locations
+    for name, info in lore_obj.get("locations", {}).items():
+        out["locations"][name] = {
+            "description": info.get("description", ""),
+            "discovered_at_turn": info.get("discovered_at_turn", 0),
+            "tags": list(info.get("tags", []))
+        }
+    # factions
+    for name, info in lore_obj.get("factions", {}).items():
+        out["factions"][name] = {
+            "description": info.get("description", ""),
+            "tags": list(info.get("tags", []))
+        }
+    return out
+
+def deserialize_lore_on_load(lore_json):
+    """Convert loaded lore (lists) into runtime structure (sets for tags)."""
+    if not lore_json:
+        return {}
+    out = {}
+    out["vexal"] = {
+        "main_quest": lore_json.get("vexal", {}).get("main_quest", ""),
+        "notes": list(lore_json.get("vexal", {}).get("notes", []))
+    }
+    out["persons"] = {}
+    for name, info in lore_json.get("persons", {}).items():
+        out["persons"][name] = {
+            "role": info.get("role", ""),
+            "significance": info.get("significance", ""),
+            "notes": list(info.get("notes", [])),
+            "tags": list(info.get("tags", []))
+        }
+    out["locations"] = {}
+    for name, info in lore_json.get("locations", {}).items():
+        out["locations"][name] = {
+            "description": info.get("description", ""),
+            "discovered_at_turn": info.get("discovered_at_turn", 0),
+            "tags": list(info.get("tags", []))
+        }
+    out["factions"] = {}
+    for name, info in lore_json.get("factions", {}).items():
+        out["factions"][name] = {
+            "description": info.get("description", ""),
+            "tags": list(info.get("tags", []))
+        }
+    out["tags"] = list(lore_json.get("tags", []))
+    return out
+
 # --- SIDEBAR (Location, Time, Turn #, Vexal banner) ---
 def _render_sidebar():
     with st.sidebar:
@@ -95,12 +169,15 @@ def _render_sidebar():
         # Location / Time / Turn display
         st.markdown("**📍 Location**")
         st.write(gs.get('location', 'Unknown'))
-        # Small description from lore if present
-        loc_desc = lore.st.session_state.lore["locations"].get(gs.get('location', ''), {}).get('description', '')
+        # Small description from lore if present (safe access)
+        loc_entry = st.session_state.get("lore", {}).get("locations", {}).get(gs.get('location', ''), {})
+        loc_desc = loc_entry.get('description', '')
         if loc_desc:
             st.caption(loc_desc)
         st.markdown("---")
-        st.markdown(f"**⏱️ Time:** {st.session_state.get('last_action_time', '')}")
+        # Show both real last action time and formatted in-game time
+        st.markdown(f"**⏱️ Real:** {st.session_state.get('last_action_time', '')}")
+        st.markdown(f"**🕰️ In‑Game:** {format_game_datetime(gs)}")
         st.markdown(f"**🔁 Turn #:** {st.session_state.get('turn_count', 0)}")
 
         # Active Conditions Display (hide severity for Vexal)
@@ -139,15 +216,14 @@ _render_sidebar()
 tab_con, tab_stat, tab_char, tab_inv, tab_lore, tab_sett = st.tabs(["📜 CONSOLE", "🩹 STATUS", "👤 CHARACTER", "🎒 INVENTORY", "📚 LORE", "⚙️ SETTINGS"])
 
 with tab_stat:
-    # (existing Status content remains unchanged) ...
-    # [ unchanged code omitted here for brevity — keep same as previous version up to Experience display ]
+    # Status content (unchanged except experience display) ...
     st.subheader("📊 Experience")
     exp = gs.get("experience", 0)
     exp_next = gs.get("experience_next", 100)
     exp_progress = min(1.0, exp / max(1, exp_next))
     st.progress(exp_progress)
     st.write(f"Experience: {exp} / {exp_next}")
-    # (rest of the Status tab unchanged)
+    # rest of the status tab preserved...
 
 with tab_con:
     c_win = st.container()
@@ -175,12 +251,18 @@ with tab_con:
             if imp:
                 full = f"🛠️ [IMPROMPTU]: {imp}"
                 st.session_state.messages.append({"role": "user", "content": full})
+                # call GM
                 res = get_gm_response(full)
                 st.session_state.messages.append({"role": "assistant", "content": res})
                 trigger_tts(res)
-                # increment turn count and update time
+                # increment turn count and update time (UI-side advancement to ensure at least one turn passed)
                 st.session_state.turn_count = st.session_state.get('turn_count', 0) + 1
                 st.session_state.last_action_time = datetime.utcnow().isoformat()
+                # defensive: advance in-game time by one standard turn (this is in addition to any LLM-suggested time applied inside get_gm_response)
+                try:
+                    advance_game_time(turns=1)
+                except Exception:
+                    pass
                 st.rerun()
 
     direct = st.chat_input("Direct Command...")
@@ -188,19 +270,23 @@ with tab_con:
         full = st.session_state.cmd_buffer + direct
         st.session_state.messages.append({"role": "user", "content": full})
         st.session_state.cmd_buffer = ""
+        # call GM
         res = get_gm_response(full)
         st.session_state.messages.append({"role": "assistant", "content": res})
         trigger_tts(res)
-        # increment turn count and update time
+        # increment turn count and update time (UI-side advancement)
         st.session_state.turn_count = st.session_state.get('turn_count', 0) + 1
         st.session_state.last_action_time = datetime.utcnow().isoformat()
+        try:
+            advance_game_time(turns=1)
+        except Exception:
+            pass
         st.rerun()
 
 with tab_char:
     st.subheader("Amara Silvermoon — Character Sheet")
     col_left, col_right = st.columns([1,2])
     with col_left:
-        # Portrait uploader / display
         portrait = st.session_state.get("portrait")
         uploaded = st.file_uploader("Upload Portrait (use the supplied Amara image)", type=["png","jpg","jpeg"], key="portrait_upload")
         if uploaded is not None:
@@ -250,9 +336,9 @@ with tab_lore:
     lore.init_lore()
     # Vexal Lore
     with st.expander("1. Vexal Lore (Main Quest)"):
-        st.write(st.session_state.lore["vexal"]["main_quest"])
+        st.write(st.session_state.lore.get("vexal", {}).get("main_quest", ""))
         st.markdown("Notes:")
-        for n in st.session_state.lore["vexal"]["notes"]:
+        for n in st.session_state.lore.get("vexal", {}).get("notes", []):
             st.write(f"- {n}")
         new_note = st.text_input("Add Vexal Note", key="add_vex_note")
         if st.button("➕ Add Vexal Note"):
@@ -263,10 +349,10 @@ with tab_lore:
 
     # Persons of Interest
     with st.expander("2. Persons of Interest"):
-        if not st.session_state.lore["persons"]:
+        if not st.session_state.lore.get("persons"):
             st.info("No persons recorded yet.")
         else:
-            for name, info in st.session_state.lore["persons"].items():
+            for name, info in st.session_state.lore.get("persons", {}).items():
                 with st.container():
                     st.markdown(f"**{name}** — {info.get('role','')}")
                     if info.get('significance'):
@@ -284,10 +370,10 @@ with tab_lore:
 
     # Locations
     with st.expander("3. Locations"):
-        if not st.session_state.lore["locations"]:
+        if not st.session_state.lore.get("locations"):
             st.info("No locations recorded yet.")
         else:
-            for loc, data in st.session_state.lore["locations"].items():
+            for loc, data in st.session_state.lore.get("locations", {}).items():
                 st.markdown(f"**{loc}** — {data.get('description','')}")
                 st.caption(f"Discovered at turn {data.get('discovered_at_turn','?')}")
         lname = st.text_input("Add Location Name", key="add_loc_name")
@@ -300,13 +386,14 @@ with tab_lore:
 
 with tab_sett:
     st.subheader("🛠️ System Controls")
-    # (settings content remains unchanged from prior)
+    # 1. UNDO TURN
     if st.button("⬅️ UNDO LAST TURN", use_container_width=True, help="Reverts the last player action and GM response."):
         if len(st.session_state.messages) >= 2:
             st.session_state.messages = st.session_state.messages[:-2]
             st.rerun()
         else:
             st.warning("No turns left to undo!")
+
     st.divider()
     st.subheader("🩹 Condition Manager")
     col_add, col_remove = st.columns(2)
@@ -338,10 +425,12 @@ with tab_sett:
     st.subheader("💾 Game Persistence")
     col_save, col_load = st.columns(2)
     with col_save:
+        # serialize lore to avoid non-serializable types (sets)
+        lore_serial = serialize_lore_for_save(st.session_state.get('lore', {}))
         save_data = json.dumps({
             'game_state': gs,
             'condition_timers': st.session_state.condition_timers,
-            'lore': st.session_state.get('lore', {})
+            'lore': lore_serial
         }, indent=4)
         st.download_button(
             label="DOWNLOAD SAVE (.json)",
@@ -356,12 +445,14 @@ with tab_sett:
         if uploaded_file is not None:
             try:
                 save_obj = json.load(uploaded_file)
+                # require the correctly-named key 'vexal_state' in game_state for this repo
                 if "game_state" in save_obj and "vexal_state" in save_obj["game_state"]:
                     st.session_state.game_state = save_obj["game_state"]
                     if "condition_timers" in save_obj:
                         st.session_state.condition_timers = save_obj["condition_timers"]
                     if "lore" in save_obj:
-                        st.session_state.lore = save_obj["lore"]
+                        # deserialize lore lists back into runtime format
+                        st.session_state.lore = deserialize_lore_on_load(save_obj["lore"])
                     st.success("Save Loaded! Refreshing...")
                     time.sleep(1)
                     st.rerun()
