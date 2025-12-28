@@ -1,3 +1,4 @@
-google-genai
-google-cloud-texttospeech
 streamlit
+google-genai
+# other libs you use (openai) optional
+openai
