@@ -20,16 +20,16 @@ FEAT_LIBRARY = {
 
 INITIAL_GAME_STATE = {
     'name': 'Amara Silvermoon', 'level': 10, 'xp': 5600, 'xp_next': 5500,
-    'hp': 230, 'hp_max': 250, 'mana': 180, 'mana_max': 200, 'stamina': 160, 'stamina_max': 180,
+    'hp': 250, 'hp_max': 250, 'mana': 200, 'mana_max': 200, 'stamina': 180, 'stamina_max': 180,
     'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vaxel_state': "Active",
     'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
     'conditions': {"Vexal Active": "(-2 to ALL Attributes, -20 to Pools)"},
     'feats': [],
     'skills': {
-        'Martial': {'One-Handed': 10, 'Two-Handed': 4, 'Bladed': 7, 'Heavy Armor': 8},
-        'Mystical': {'Holy': 10, 'Restoration': 7},
-        'Professional': {'Survival': 4, 'Athletics': 6},
-        'Social': {'Insight': 10, 'Etiquette': 7},
+        'Martial': {'One-Handed': 10, 'Two-Handed': 4, 'Bladed': 7, 'Blunt': 4, 'Blocking': 5, 'Heavy Armor': 8, 'Light Armor': 3, 'Marksmanship': 3},
+        'Mystical': {'Holy': 10, 'Arcane': 4, 'Elemental': 3, 'Restoration': 7},
+        'Professional': {'Alchemy': 2, 'Enchanting': 4, 'Survival': 4, 'Athletics': 6, 'Blacksmithing': 4},
+        'Social': {'Persuasion': 3, 'Intimidation': 3, 'Insight': 10, 'Etiquette': 7},
         'Subterfuge': {'Stealth': 2}
     },
     'equipment': {
@@ -38,6 +38,8 @@ INITIAL_GAME_STATE = {
         'MainHand': {'item': 'Solari Longsword', 'material': 'Silver-Steel', 'cond': 100, 'type': 'Weapon', 'dmg': '2d8'},
         'OffHand': {'item': 'Kite Shield', 'material': 'Steel', 'cond': 80, 'type': 'Armor'}
     },
+    'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Consecrate Ground', 'Lesser Smite', 'Lesser Heal', 'Purify Flesh', 'Stamina Surge'],
+    'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Consecrate Ground': 20, 'Lesser Smite': 10, 'Lesser Heal': 12, 'Purify Flesh': 10, 'Stamina Surge': 10},
     'inventory': {'currency': {'Silver': 150}},
     'prev_eff': {}
 }
