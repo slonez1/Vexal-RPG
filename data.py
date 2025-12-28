@@ -162,7 +162,7 @@ SPELL_TIERING = {
 
 # Initial Game State
 INITIAL_GAME_STATE = {
-    'name': 'Amara Silvermoon', 'level': 10, 'xp': 5600, 'xp_next': 5500,
+    'name': 'Amara Silvermoon', 'level': 10, 'experience': 5600, 'experience_next': 5500,
     'hp': 100, 'hp_max': 250, 'mana': 30, 'mana_max': 200, 'stamina': 80, 'stamina_max': 180,
     'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vexal_state': "Active",
     'attributes': {'STR': 16, 'DEX': 16, 'CON': 14, 'INT': 12, 'WIS': 20, 'CHA': 18},
