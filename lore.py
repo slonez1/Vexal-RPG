@@ -59,7 +59,7 @@ def auto_extract_and_add(text):
     """
     init_lore()
     if not text:
-        return
+        return {}
     txt = text or ""
     if "bastion" in txt.lower():
         st.session_state.lore["vexal"]["main_quest"] = (
@@ -79,127 +79,134 @@ def auto_extract_and_add(text):
                 add_person(cand, note="Auto-extracted (heuristic).")
             else:
                 add_location(cand, description="Discovered in narrative (heuristic).")
+    return {"source": "heuristic"}
 
-# ----------------- LLM integration -----------------
-def _call_openai_chat(prompt, model="gpt-4-0613", max_tokens=800):
+# ----------------- LLM integration (Gemini / Google GenAI) -----------------
+def _call_google_genai_chat(prompt, model=None):
     """
-    Try to call OpenAI ChatCompletion. Requires 'OPENAI_API_KEY' in st.secrets and openai package installed.
-    """
-    try:
-        import openai
-    except Exception as e:
-        _log.debug("openai package missing: %s", e)
-        raise
-
-    api_key = st.secrets.get("OPENAI_API_KEY") or st.secrets.get("openai_api_key")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not found in st.secrets")
-    openai.api_key = api_key
-    resp = openai.ChatCompletion.create(
-        model=model,
-        messages=[{"role": "system", "content": "You are a helpful lore extraction assistant."},
-                  {"role": "user", "content": prompt}],
-        max_tokens=max_tokens,
-        temperature=0.0
-    )
-    return resp.choices[0].message.content
-
-def _call_google_genai_chat(prompt, model="models/chat-bison-001"):
-    """
-    Try to call Google Generative AI (google.generativeai). Requires GOOGLE_API_KEY in st.secrets.
+    Try to call Google Generative AI (Gemini) via the google.generativeai client.
+    Requires GEMINI_API_KEY or GOOGLE_API_KEY in st.secrets and google.generativeai installed.
     """
     try:
         import google.generativeai as genai
     except Exception as e:
-        _log.debug("google.genai package missing: %s", e)
+        _log.debug("google.generativeai import failed: %s", e)
         raise
 
-    api_key = st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("google_api_key")
+    # Prefer GEMINI_API_KEY then GOOGLE_API_KEY
+    api_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("google_api_key")
     if not api_key:
-        raise RuntimeError("GOOGLE_API_KEY not found in st.secrets")
-    genai.configure(api_key=api_key)
-    resp = genai.chat.create(model=model, messages=[{"author":"user","content":prompt}], temperature=0.0)
-    return resp.last
+        # also allow a service account JSON in secrets under GOOGLE_SERVICE_ACCOUNT
+        svc = st.secrets.get("GOOGLE_SERVICE_ACCOUNT")
+        if svc:
+            # if a JSON string is present, configure via environment (client library can pick it up)
+            # This is best-effort; if it fails we'll raise later
+            import os, json as _json
+            try:
+                svc_path = "/tmp/streamlit_google_service_account.json"
+                with open(svc_path, "w") as f:
+                    f.write(svc if isinstance(svc, str) else _json.dumps(svc))
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = svc_path
+            except Exception as _e:
+                _log.debug("Failed to write service account: %s", _e)
+                raise RuntimeError("No usable Google API credential found in secrets.")
+    else:
+        genai.configure(api_key=api_key)
+
+    # choose model: prefer configured one in secrets, otherwise fallback to chat-bison
+    model_name = st.secrets.get("GENAI_MODEL") or st.secrets.get("GEMINI_MODEL") or model or "models/chat-bison-001"
+    # Build messages payload
+    try:
+        resp = genai.chat.create(model=model_name, messages=[{"author":"user","content":prompt}], temperature=0.0)
+    except TypeError:
+        # older/newer SDK differences
+        resp = genai.generate(model=model_name, prompt=prompt)
+    # extract text
+    if hasattr(resp, "candidates") and resp.candidates:
+        # older interface
+        return resp.candidates[0].content if hasattr(resp.candidates[0], "content") else str(resp)
+    if hasattr(resp, "last") and resp.last and hasattr(resp.last, "content"):
+        return resp.last.content
+    # fallback to string
+    return str(resp)
 
 def _parse_model_json(text):
     """Try to parse JSON returned by model; be defensive."""
     try:
         payload = text.strip()
-        # sometimes models wrap output in ```json ... ```
+        # remove code fence wrappers if present
         if payload.startswith("```"):
-            # remove code fence
-            payload = "\n".join(payload.splitlines()[1:-1]) if "\n" in payload else payload.strip("`")
+            # strip leading/trailing ``` blocks
+            lines = payload.splitlines()
+            # remove first and last if they are ``` markers
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            payload = "\n".join(lines)
         return json.loads(payload)
     except Exception as e:
-        _log.debug("JSON parse failed: %s", e)
+        _log.debug("JSON parse failed: %s -- raw:%s", e, text[:400])
         return None
 
 def llm_extract(text):
     """
-    Ask an LLM to extract structured lore from the text.
-    Returns dict with optional keys: persons, locations, factions, tags, vexal_updates
-    Each of the person/location entries should be in a small dict form.
-    This function is defensive: if the provider or client lib is not available, raises an error.
+    Ask an LLM (Gemini/GenAI) to extract structured lore from the text.
+    Returns parsed dict or raises if provider not available.
+    Expected JSON schema (example):
+    {
+      "persons": [{"name":"Eldon","role":"Scholar","significance":"Knows Bastion","notable_notes":["..."],"tags":["scholar"]}],
+      "locations": [{"name":"Harrowfen","description":"A ruined keep","tags":["ruin"]}],
+      "factions": [{"name":"Blood Cult","description":"...","tags":["cult"]}],
+      "tags": ["bastion","vexal"],
+      "vexal_updates": ["Found reference to bastion fragment in Harrowfen."],
+      "time_advance": {"scale":"combat","seconds_per_turn":6}
+    }
     """
-    # short instruction: ask for JSON only
     prompt = (
         "Extract structured lore elements from the following narrative. "
-        "Return valid JSON with keys: persons, locations, factions, tags, vexal_updates.\n\n"
+        "Return valid JSON with keys: persons, locations, factions, tags, vexal_updates, time_advance.\n\n"
         "Persons: list of objects {name, role (short), significance (short), notable_notes (list), tags (list)}\n"
         "Locations: list of objects {name, description (short), tags (list)}\n"
         "Factions: list of objects {name, description (short), tags}\n"
         "tags: list of short tags\n"
-        "vexal_updates: list of short lines that update the main quest or mention Bastion/fragment clues\n\n"
+        "vexal_updates: list of short lines that update the main quest or mention Bastion/fragment clues\n"
+        "time_advance: optional object e.g. {\"scale\":\"combat\",\"seconds_per_turn\":6} or {\"hours\":6} or {\"seconds\":30}\n\n"
         "Narrative:\n" + (text or "")
-        + "\n\nOutput ONLY valid JSON. Be brief in descriptions."
+        + "\n\nOutput ONLY valid JSON."
     )
 
-    # Try OpenAI if key present
-    if st.secrets.get("OPENAI_API_KEY") or st.secrets.get("openai_api_key"):
-        try:
-            resp_text = _call_openai_chat(prompt)
-            parsed = _parse_model_json(resp_text)
-            if parsed:
-                return parsed
-        except Exception as e:
-            _log.debug("OpenAI call failed: %s", e)
-
-    # Try Google GenAI if key present
-    if st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("google_api_key"):
-        try:
-            resp = _call_google_genai_chat(prompt)
-            # genai returns a structured object; use its text
-            resp_text = getattr(resp, "content", "") or str(resp)
-            parsed = _parse_model_json(resp_text)
-            if parsed:
-                return parsed
-        except Exception as e:
-            _log.debug("Google GenAI call failed: %s", e)
-
-    # If we reach here, no working LLM — raise to let caller fallback to heuristic
-    raise RuntimeError("No LLM available or LLM extraction failed")
+    # Try Google GenAI / Gemini
+    try:
+        resp_text = _call_google_genai_chat(prompt)
+        parsed = _parse_model_json(resp_text)
+        if parsed is not None:
+            return parsed
+    except Exception as e:
+        _log.debug("GenAI/Gemini call failed: %s", e)
+    # If LLM fails, raise to let caller fallback to heuristic
+    raise RuntimeError("LLM extraction failed or no provider available")
 
 def llm_extract_and_add(text):
     """
     Use an LLM (if available) to extract structured lore and add it to session_state.
-    Falls back to auto_extract_and_add heuristics on any failure.
+    Returns the extracted dict (or heuristic dict on fallback).
     """
     init_lore()
     if not text:
-        return
+        return {}
     try:
         extracted = llm_extract(text)
     except Exception as e:
         _log.debug("LLM extraction failed, falling back to heuristics: %s", e)
-        auto_extract_and_add(text)
-        return
+        extracted = auto_extract_and_add(text) or {"source": "heuristic"}
 
     # Merge persons
     persons = extracted.get("persons") or []
     for p in persons:
         name = p.get("name")
         role = p.get("role")
-        sig = p.get("significance") or p.get("significance", "")
+        sig = p.get("significance") or ""
         notes = p.get("notable_notes") or []
         tags = p.get("tags") or []
         if name:
@@ -230,3 +237,6 @@ def llm_extract_and_add(text):
     for v in vex:
         if v:
             add_vexal_note("LLM: " + v)
+
+    # Return the extraction dict so callers can access time_advance etc.
+    return extracted or {"source": "heuristic"}
