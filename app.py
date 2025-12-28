@@ -216,8 +216,12 @@ with tab_stat:
     # 7. Experience Display
     st.divider()
     st.subheader("📊 Experience")
-    st.progress(gs.get("experience", 0) / 100)
-    st.write(f"Experience: {gs.get('experience', 0)} / 100")
+    # Use canonical experience_next and ensure progress is in 0.0-1.0 range
+    exp = gs.get("experience", 0)
+    exp_next = gs.get("experience_next", 100)
+    exp_progress = min(1.0, exp / max(1, exp_next))
+    st.progress(exp_progress)
+    st.write(f"Experience: {exp} / {exp_next}")
     
     # 8. Location System
     st.divider()
