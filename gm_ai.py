@@ -6,6 +6,7 @@ import lore
 def get_gm_response(prompt):
     """
     GM response stub: preserves original behavior and updates the lore repository.
+    This version calls the LLM-backed lore extractor when keys are present.
     """
     update_condition_timers()
     if "use" in prompt.lower() or "cast" in prompt.lower():
@@ -14,15 +15,17 @@ def get_gm_response(prompt):
     if "solve" in prompt.lower():
         st.success("Puzzle solved! You found a hidden passage.")
 
-    # Example narrative (kept intentionally compact/predictable so parsing works)
     narrative = f"Narrative: Amara acts upon '{prompt}'. (Vexal influence detected)."
-    # Auto-update lore heuristics from the narrative text
+
+    # Try LLM extraction first, fall back to heuristics (both functions update lore in session_state)
     try:
-        lore.init_lore()
-        lore.auto_extract_and_add(narrative)
+        lore.llm_extract_and_add(narrative)
     except Exception:
-        # Non-fatal - do not block GM response
-        pass
+        try:
+            lore.auto_extract_and_add(narrative)
+        except Exception:
+            # Non-fatal
+            pass
 
     return narrative
 
