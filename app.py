@@ -5,13 +5,16 @@ from data import INITIAL_GAME_STATE, MAT_PROPS, FEAT_LIBRARY
 
 st.set_page_config(page_title="Vexal Engine v5", layout="wide", initial_sidebar_state="expanded")
 
-# --- CSS INTEGRITY ---
+# --- CSS: RESTORED SIDEBAR BAR COLORS ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] { background-color: #0e1117; }
         .attr-box { background: #1e1e1e; border: 1px solid #333; border-radius: 4px; padding: 5px; text-align: center; margin-bottom: 5px; }
         .attr-label { font-size: 0.55rem; color: #888; text-transform: uppercase; }
         .attr-val { font-size: 0.85rem; font-weight: bold; }
+        /* Custom Bar Styles */
+        .bar-container { background-color: #333; border-radius: 5px; height: 12px; width: 100%; margin-bottom: 10px; }
+        .bar-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -22,7 +25,7 @@ if "cmd_buffer" not in st.session_state: st.session_state.cmd_buffer = ""
 
 gs = st.session_state.game_state
 
-# --- MATH ENGINE (VEXAL & POOLS) ---
+# --- MATH ENGINE ---
 def get_effective_stats():
     eff_attr = gs['attributes'].copy()
     pool_mod = 0
@@ -37,11 +40,15 @@ def get_effective_stats():
 eff_attr, p_mod = get_effective_stats()
 cur_hp_m, cur_sta_m, cur_mana_m = gs['hp_max']+p_mod, gs['stamina_max']+p_mod, gs['mana_max']+p_mod
 
-# --- SIDEBAR ---
+# --- SIDEBAR: RESTORED CUSTOM HTML BARS ---
 def custom_bar(label, current, maximum, color):
     percent = min(100, max(0, (current / maximum) * 100))
-    st.sidebar.markdown(f"<div style='font-size:0.75rem; font-weight:bold;'>{label} {int(current)}/{maximum}</div>", unsafe_allow_html=True)
-    st.sidebar.progress(percent/100)
+    st.sidebar.markdown(f"""
+        <div style="display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: bold; margin-bottom: 2px;">
+            <span>{label}</span><span>{int(current)}/{maximum}</span>
+        </div>
+        <div class="bar-container"><div class="bar-fill" style="width: {percent}%; background-color: {color};"></div></div>
+    """, unsafe_allow_html=True)
 
 with st.sidebar:
     st.title(f"🛡️ {gs['name']}")
@@ -64,23 +71,22 @@ with st.sidebar:
     boxes = "".join(["▣" if i < gs['orgasm_count'] else "▢" for i in range(10)])
     st.markdown(f"**Subjugation Peak:** <span style='color:#e83e8c;'>{boxes}</span>", unsafe_allow_html=True)
 
-# --- TABS ---
+# --- TABS: RESTORED ALL ---
 tab_con, tab_stat, tab_char, tab_inv, tab_sett = st.tabs(["📜 CONSOLE", "🩹 STATUS", "👤 CHARACTER", "🎒 INVENTORY", "⚙️ SETTINGS"])
 
 with tab_con:
-    # Notification Logic
+    # Notification Panel (Restored)
     last_txt = st.session_state.messages[-1]['content'] if st.session_state.messages else ""
     if "[SKILL TRAINER]" in last_txt:
-        with st.expander("🎓 TRAINER: Spend 50 Silver for +1 Skill", expanded=True):
-            s_list = [s for cat in gs['skills'].values() for s in cat.keys()]
-            t_sk = st.selectbox("Select Skill", s_list)
-            if st.button("Train") and gs['inventory']['currency']['Silver'] >= 50:
+        with st.expander("🎓 SKILL TRAINER", expanded=True):
+            s_all = [s for cat in gs['skills'].values() for s in cat.keys()]
+            t_sk = st.selectbox("Train Skill (50 Silver)", s_all)
+            if st.button("Confirm Training") and gs['inventory']['currency']['Silver'] >= 50:
                 gs['inventory']['currency']['Silver'] -= 50
                 for c in gs['skills']: 
                     if t_sk in gs['skills'][c]: gs['skills'][c][t_sk] += 1
                 st.rerun()
 
-    # Chat Display
     c_win = st.container(height=350)
     with c_win:
         for m in st.session_state.messages:
@@ -92,7 +98,7 @@ with tab_con:
         sk = st.selectbox("Skills", [s for cat in gs['skills'].values() for s in cat.keys()], label_visibility="collapsed")
         if st.button("💪 Add Skill Tag", use_container_width=True): st.session_state.cmd_buffer = f"[Use Skill: {sk}] "; st.rerun()
     with d2:
-        sp = st.selectbox("Spells", gs.get('known_spells', ['None']), label_visibility="collapsed")
+        sp = st.selectbox("Spells", gs['known_spells'], label_visibility="collapsed")
         if st.button("✨ Add Spell Tag", use_container_width=True): st.session_state.cmd_buffer = f"[Use Spell: {sp}] "; st.rerun()
     with d3:
         imp = st.text_input("Impromptu", placeholder="Craft...", label_visibility="collapsed")
@@ -105,7 +111,7 @@ with tab_con:
         st.session_state.cmd_buffer = ""; st.rerun()
 
 with tab_stat:
-    st.subheader("Conditions")
+    st.subheader("Active Conditions")
     for c, d in gs['conditions'].items(): st.warning(f"**{c}**: {d}")
     st.divider()
     st.subheader("Saving Throws")
@@ -114,17 +120,28 @@ with tab_stat:
         sc[i%3].metric(f"{a} Save", eff_attr[a] + (gs['level'] // 2))
 
 with tab_char:
+    # RESTORED FULL SKILL CATEGORIES
+    st.subheader("Mastered Skills")
     for cat, sks in gs['skills'].items():
         with st.expander(f"{cat} Mastery"):
             cc1, cc2 = st.columns(2)
-            for i, (s, r) in enumerate(sks.items()): (cc1 if i%2==0 else cc2).write(f"**{s}**: Rank {r}")
+            for i, (s, r) in enumerate(sks.items()): 
+                (cc1 if i%2==0 else cc2).write(f"**{s}**: Rank {r}")
+    
+    # RESTORED SPELLBOOK
+    st.divider()
+    st.subheader("✨ Spellbook")
+    spc1, spc2 = st.columns(2)
+    for i, spname in enumerate(gs['known_spells']):
+        cost = gs['mana_costs'].get(spname, 0)
+        (spc1 if i%2==0 else spc2).info(f"**{spname}** ({cost} MP)")
 
 with tab_inv:
-    st.subheader("Equipment & Condition")
+    st.subheader("Equipment")
     for slot, d in gs['equipment'].items():
         with st.container(border=True):
             st.write(f"**{slot}:** {d['item']} ({d['material']})")
-            st.progress(d['cond']/100)
+            st.progress(d['cond']/100, text=f"Condition: {d['cond']}%")
     st.write(f"💰 Silver: {gs['inventory']['currency']['Silver']}")
 
 with tab_sett:
