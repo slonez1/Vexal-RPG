@@ -1,11 +1,12 @@
 import streamlit as st
 import re
 import random
-from data import INITIAL_GAME_STATE, MAT_PROPS, FEATS
+import base64
+from data import INITIAL_GAME_STATE, MAT_PROPS
 
-st.set_page_config(page_title="Vexal Engine v5", layout="wide")
+# --- 1. CONFIG ---
+st.set_page_config(page_title="Vexal Engine v5", layout="wide", initial_sidebar_state="expanded")
 
-# --- SESSION INITIALIZATION ---
 if "game_state" not in st.session_state:
     st.session_state.game_state = INITIAL_GAME_STATE
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -14,17 +15,17 @@ if "audio_enabled" not in st.session_state: st.session_state.audio_enabled = Tru
 
 gs = st.session_state.game_state
 
-# --- MECHANICS ENGINE ---
+# --- 2. LOGIC ENGINE ---
 def get_effective_attributes():
     eff = gs['attributes'].copy()
-    # 1. Apply Condition Modifiers
+    # Apply Condition Penalties
     for impact in gs['conditions'].values():
         mods = re.findall(r'([+-]\d+)\s+(STR|DEX|CON|INT|WIS|CHA|ALL)', impact.upper())
         for val, attr in mods:
             if attr == 'ALL':
                 for a in eff: eff[a] += int(val)
             else: eff[attr] += int(val)
-    # 2. Apply Armor Penalties
+    # Apply Armor DEX Penalties
     for slot in ['Head', 'Torso', 'Legs', 'Hands']:
         if slot in gs['equipment']:
             mat = gs['equipment'][slot]['material']
@@ -32,89 +33,93 @@ def get_effective_attributes():
             eff['DEX'] += penalty
     return eff
 
-def get_saving_throw(attr_name):
+def get_saving_throw(attr):
     eff = get_effective_attributes()
-    # Saving Throw = Attribute + (Level / 2)
-    return eff[attr_name] + (gs['level'] // 2)
+    return eff[attr] + (gs['level'] // 2)
 
-def calculate_attack():
-    weapon = gs['equipment']['MainHand']
-    eff = get_effective_attributes()
-    scaling_stat = weapon.get('scaling', 'STR')
-    stat_mod = (eff[scaling_stat] - 10) // 2
-    
-    roll = random.randint(1, 20)
-    # Find skill rank (checking Martial category)
-    skill_rank = gs['skills']['Martial'].get(weapon['type'], 0)
-    
-    to_hit = roll + stat_mod + (skill_rank // 2)
-    
-    d_num, d_sides = map(int, weapon['dmg'].split('d'))
-    dmg = sum(random.randint(1, d_sides) for _ in range(d_num)) + stat_mod
-    return to_hit, dmg, roll
-
-# --- UI COMPONENTS ---
+# --- 3. UI HELPERS ---
 def custom_bar(label, current, maximum, color):
     percent = min(100, max(0, (current / maximum) * 100))
     st.markdown(f"""
         <div style="margin-bottom: 8px;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: bold;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: bold; margin-bottom: 2px;">
                 <span>{label}</span><span>{int(current)}/{maximum}</span>
             </div>
-            <div style="background-color: #333; height: 8px; width: 100%; border-radius: 4px;">
+            <div style="background-color: #333; border-radius: 4px; height: 10px; width: 100%;">
                 <div style="background-color: {color}; width: {percent}%; height: 100%; border-radius: 4px;"></div>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-# --- SIDEBAR ---
+# --- 4. SIDEBAR (RESTORED FULL) ---
 with st.sidebar:
     st.title(f"🛡️ {gs['name']}")
-    custom_bar("❤️ HP", gs['hp'], gs['hp_max'], "#ff4b4b")
-    custom_bar("⚡ STAM", gs['stamina'], gs['stamina_max'], "#28a745")
+    custom_bar("❤️ HEALTH", gs['hp'], gs['hp_max'], "#ff4b4b")
+    custom_bar("⚡ STAMINA", gs['stamina'], gs['stamina_max'], "#28a745")
     custom_bar("✨ MANA", gs['mana'], gs['mana_max'], "#007bff")
-    st.markdown("<hr style='margin:10px 0; border-color:#444;'>", unsafe_allow_html=True)
-    custom_bar("⚖️ FAVOR", gs['divine_favor'], 100, "#fd7e14")
+    st.markdown("<hr style='border: 1px solid #444; margin: 15px 0;'>", unsafe_allow_html=True)
+    custom_bar("⚖️ DIVINE FAVOR", gs['divine_favor'], 100, "#fd7e14")
     
+    st.divider()
     eff = get_effective_attributes()
-    st.write("### Attributes")
+    st.markdown("<div style='text-align:center; font-size:0.7rem; font-weight:bold; color:#888;'>ATTRIBUTES</div>", unsafe_allow_html=True)
     cols = st.columns(3)
     for i, (attr, base) in enumerate(gs['attributes'].items()):
-        val = eff[attr]
-        diff = val - base
-        color = "#28a745" if diff > 0 else "#ff4b4b" if diff < 0 else "#eee"
-        cols[i%3].markdown(f"<div style='text-align:center; background:#111; padding:5px; border-radius:5px;'><div style='font-size:0.6rem; color:#888;'>{attr}</div><div style='color:{color}; font-weight:bold;'>{val}</div></div>", unsafe_allow_html=True)
+        val = eff[attr]; diff = val - base
+        color = "#ff4b4b" if diff < 0 else "#28a745" if diff > 0 else "#eee"
+        val_str = f"{val}({diff})" if diff != 0 else f"{val}"
+        cols[i%3].markdown(f"<div style='text-align:center; background:#1e1e1e; border:1px solid #333; border-radius:4px; padding:5px;'><div style='font-size:0.6rem; color:#888;'>{attr}</div><div style='font-size:0.9rem; font-weight:bold; color:{color};'>{val_str}</div></div>", unsafe_allow_html=True)
 
     st.divider()
-    st.progress(gs['xp'] / gs['xp_next'], text=f"XP: {gs['xp']}/{gs['xp_next']}")
-    if st.button("🌟 Level Up Available!") if gs['xp'] >= gs['xp_next'] else None:
-        st.toast("Level Up logic triggered!")
+    st.markdown(f"**Vaxel State:** `{gs['vaxel_state']}`")
+    custom_bar("💓 AROUSAL", gs['arousal'], 100, "#e83e8c")
+    boxes = "".join(["▣" if i < gs['orgasm_count'] else "▢" for i in range(10)])
+    st.markdown(f"**Subjugation Peak:** `{boxes}`")
 
-# --- MAIN TABS ---
+# --- 5. TABS (RESTORED FULL) ---
 tab_con, tab_stat, tab_char, tab_inv, tab_sett = st.tabs(["📜 CONSOLE", "🩹 STATUS", "👤 CHARACTER", "🎒 INVENTORY", "⚙️ SETTINGS"])
 
 with tab_stat:
     st.subheader("Active Conditions")
-    for c, desc in gs['conditions'].items():
-        st.error(f"**{c}**: {desc}")
+    if not gs['conditions']: st.write("No active ailments.")
+    for c, d in gs['conditions'].items(): st.warning(f"**{c}**: {d}")
     st.divider()
     st.subheader("Saving Throws")
     s_cols = st.columns(3)
-    for i, attr in enumerate(['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']):
-        s_cols[i%3].metric(f"{attr} Save", get_saving_throw(attr))
+    for i, a in enumerate(['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']):
+        s_cols[i%3].metric(f"{a} Save", get_saving_throw(a))
 
 with tab_char:
     st.subheader("Character Sheet")
-    for cat, skills in gs['skills'].items():
+    for cat, sks in gs['skills'].items():
         with st.expander(f"{cat} Skills"):
-            for s, r in skills.items():
-                st.write(f"**{s}**: Rank {r}")
+            c1, c2 = st.columns(2)
+            for i, (s, r) in enumerate(sks.items()):
+                (c1 if i%2==0 else c2).write(f"**{s}**: Rank {r}")
+    st.divider()
+    st.subheader("Spellbook")
+    sp_cols = st.columns(2)
+    for i, sp in enumerate(gs['known_spells']):
+        sp_cols[i%2].info(f"✨ {sp} ({gs['mana_costs'].get(sp)} MP)")
+
+with tab_inv:
+    st.subheader("Equipped Gear")
+    for slot, data in gs['equipment'].items():
+        st.write(f"**{slot}:** {data['item']} ({data['material']}) — `{data['cond']}%` Condition")
+    st.divider()
+    st.subheader("Inventory Storage")
+    for cont, data in gs['inventory']['containers'].items():
+        st.write(f"📁 **{cont}**: {', '.join(data['items']) if data['items'] else 'Empty'}")
+    st.write(f"💰 **Currency:** {gs['inventory']['currency']['Silver']} Silver")
 
 with tab_sett:
-    st.subheader("Engine Settings")
-    st.session_state.audio_enabled = st.toggle("Enable TTS Voice", value=st.session_state.audio_enabled)
-    if st.button("Reset Game State"):
-        del st.session_state.game_state
+    st.session_state.audio_enabled = st.toggle("🔊 Audio Enabled", value=st.session_state.audio_enabled)
+    if st.button("⬅️ Undo Last Turn"):
+        if len(st.session_state.messages) >= 2: st.session_state.messages = st.session_state.messages[:-2]
+        st.rerun()
+    if st.button("⚠️ Hard Reset"):
+        st.session_state.game_state = INITIAL_GAME_STATE
+        st.session_state.messages = []
         st.rerun()
 
 with tab_con:
@@ -122,31 +127,25 @@ with tab_con:
     with chat_win:
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.markdown(m["content"])
-
+    
+    # ACTION DECK
     st.write("---")
-    # THE RESTORED ACTION DECK
     c1, c2, c3 = st.columns(3)
     with c1:
-        all_skills = [s for cat in gs['skills'].values() for s in cat.keys()]
-        sel_sk = st.selectbox("Skills", all_skills)
-        if st.button("💪 Use Skill"): 
-            st.session_state.cmd_buffer = f"I use my {sel_sk} skill to "
-            st.rerun()
+        all_sk = [s for cat in gs['skills'].values() for s in cat.keys()]
+        sk = st.selectbox("Skills", all_sk)
+        if st.button("💪 Use Skill"): st.session_state.cmd_buffer = f"I use {sk} to "; st.rerun()
     with c2:
-        sel_sp = st.selectbox("Spells", gs['known_spells'])
-        if st.button("✨ Cast Spell"):
-            st.session_state.cmd_buffer = f"I cast {sel_sp} on "
-            st.rerun()
+        sp = st.selectbox("Spells", gs['known_spells'])
+        if st.button("✨ Cast"): st.session_state.cmd_buffer = f"I cast {sp} on "; st.rerun()
     with c3:
-        imp = st.text_input("Impromptu")
+        imp = st.text_input("Impromptu", placeholder="Magic...")
         if st.button("🚀 Execute"):
-            st.session_state.messages.append({"role": "user", "content": f"Impromptu: {imp}"})
-            st.rerun()
+            if imp: st.session_state.messages.append({"role": "user", "content": f"Impromptu: {imp}"}); st.rerun()
 
     direct = st.chat_input("Direct Command...")
     if direct or (st.session_state.cmd_buffer and st.button("Confirm Staged Action")):
-        final = st.session_state.cmd_buffer + (direct if direct else "")
+        final = (st.session_state.cmd_buffer + (direct if direct else "")).strip()
         st.session_state.messages.append({"role": "user", "content": final})
         st.session_state.cmd_buffer = ""
-        # GM Trigger logic here
         st.rerun()
