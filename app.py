@@ -51,6 +51,9 @@ st.markdown("""
 init_session_state()
 lore.init_lore()
 gs = st.session_state.game_state
+# when building save_data (serialize_lore_for_save already present)
+'lore': lore_serial,
+'last_llm_used': st.session_state.get('last_llm_used', False)
 
 # --- SESSION STATE CLEANUP ---
 MAX_MESSAGES = 50
