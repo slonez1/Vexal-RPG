@@ -8,23 +8,12 @@ MAT_PROPS = {
     "Gold-Filigree": {"DT": 2, "Weight": 0.4, "Noise": -2, "Dex_Penalty": 0}
 }
 
-FEAT_LIBRARY = {
-    "Aegis of Light": "Permanent +10 Max HP and +5 Holy skill.",
-    "Vaxel Synchronicity": "Reduce Arousal gain by 20% and +2 WIS.",
-    "Bladed Dancer": "Ignore Dex penalties from Steel and +2 DEX.",
-    "Divine Bastion": "+2 CON and +2 to all Saving Throws.",
-    "Scholar of the Void": "+2 INT; unlock 'Void Navigation' skill.",
-    "Iron Lung": "+20 Max Stamina for long engagements.",
-    "Titan's Grip": "Use Two-Handed weapons in one hand; +2 STR.",
-    "Shadow Weaver": "Permanent +10 to Stealth; -5 to Noise."
-}
-
 INITIAL_GAME_STATE = {
     'name': 'Amara Silvermoon', 'level': 10, 'xp': 5600, 'xp_next': 5500,
-    'hp': 250, 'hp_max': 250, 'mana': 200, 'mana_max': 200, 'stamina': 180, 'stamina_max': 180,
-    'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vaxel_state': "Active", 'turn_counter': 0,
+    'hp': 230, 'hp_max': 250, 'mana': 180, 'mana_max': 200, 'stamina': 160, 'stamina_max': 180,
+    'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vaxel_state': "Active",
     'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
-    'conditions': {"Vexal Active": "(-2 to ALL stats)"},
+    'conditions': {"Vexal Active": "(-2 to ALL Attributes, -20 to Pools)"},
     'feats': [],
     'skills': {
         'Martial': {'One-Handed': 10, 'Two-Handed': 4, 'Bladed': 7, 'Heavy Armor': 8},
@@ -39,8 +28,6 @@ INITIAL_GAME_STATE = {
         'MainHand': {'item': 'Solari Longsword', 'material': 'Silver-Steel', 'cond': 100, 'type': 'Weapon', 'dmg': '2d8'},
         'OffHand': {'item': 'Kite Shield', 'material': 'Steel', 'cond': 80, 'type': 'Armor'}
     },
-    'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Lesser Heal'],
-    'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Lesser Heal': 12},
-    'inventory': {'containers': {'Satchel': ['Whetstone', 'Holy Oil']}, 'currency': {'Silver': 150}},
+    'inventory': {'currency': {'Silver': 150}},
     'prev_eff': {}
 }
