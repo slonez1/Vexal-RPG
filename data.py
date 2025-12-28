@@ -1,4 +1,6 @@
 # data.py
+import json
+
 MAT_PROPS = {
     "Leather": {"DT": 1, "Weight": 0.5, "Noise": -1, "Dex_Penalty": 0},
     "Steel":   {"DT": 5, "Weight": 1.0, "Noise": -8, "Dex_Penalty": -2},
@@ -6,6 +8,14 @@ MAT_PROPS = {
     "Aureite": {"DT": 6, "Weight": 0.5, "Noise": -5, "Dex_Penalty": -1},
     "Silver-Steel": {"DT": 6, "Weight": 0.8, "Noise": -6, "Dex_Penalty": -1},
     "Gold-Filigree": {"DT": 2, "Weight": 0.4, "Noise": -2, "Dex_Penalty": 0}
+}
+
+FEAT_LIBRARY = {
+    "Aegis of Light": "Permanent +10 Max HP and +5 Holy skill.",
+    "Vaxel Synchronicity": "Reduce Arousal gain by 20% and +2 WIS.",
+    "Bladed Dancer": "Ignore Dex penalties from Steel and +2 DEX.",
+    "Divine Bastion": "+2 CON and +2 to all Saving Throws.",
+    "Scholar of the Void": "+2 INT; unlock 'Void Navigation' skill."
 }
 
 INITIAL_GAME_STATE = {
