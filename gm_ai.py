@@ -1,12 +1,13 @@
 import streamlit as st
-from game_state import update_condition_timers
+from game_state import update_condition_timers, apply_time_spec
 from skills import gain_experience
 import lore
+from datetime import datetime
 
 def get_gm_response(prompt):
     """
     GM response stub: preserves original behavior and updates the lore repository.
-    This version calls the LLM-backed lore extractor when keys are present.
+    Calls LLM extraction and applies any time_advance specification returned by the extractor.
     """
     update_condition_timers()
     if "use" in prompt.lower() or "cast" in prompt.lower():
@@ -17,16 +18,27 @@ def get_gm_response(prompt):
 
     narrative = f"Narrative: Amara acts upon '{prompt}'. (Vexal influence detected)."
 
-    # Try LLM extraction first, fall back to heuristics (both functions update lore in session_state)
+    # Use the LLM-backed extractor and capture returned extraction
+    extracted = {}
     try:
-        lore.llm_extract_and_add(narrative)
+        extracted = lore.llm_extract_and_add(narrative) or {}
     except Exception:
+        # If something goes wrong, ensure at least heuristic parsing ran
         try:
-            lore.auto_extract_and_add(narrative)
+            extracted = lore.auto_extract_and_add(narrative) or {}
         except Exception:
-            # Non-fatal
+            extracted = {}
+
+    # If extractor returned a time_advance hint, apply it
+    time_spec = extracted.get("time_advance") or extracted.get("time") or {}
+    if time_spec:
+        try:
+            apply_time_spec(time_spec)
+        except Exception:
+            # non-fatal
             pass
 
+    # Return narrative (same as before)
     return narrative
 
 def trigger_tts(text):
