@@ -421,6 +421,14 @@ with tab_sett:
                 st.rerun()
         else:
             st.info("No active conditions to remove.")
+        # In the tab_sett (Settings) area — insert near the top of settings controls
+    st.divider()
+    st.subheader("🧠 GM Mode / AI Settings")
+    gm_choice = st.selectbox("GM Response Mode", options=["llm", "heuristic", "static"],
+                             index=["llm", "heuristic", "static"].index(st.session_state.get("gm_mode","llm")),
+                             help="Choose how the GM replies. 'llm' uses Gemini/GenAI when available; 'heuristic' uses lightweight parsing; 'static' uses deterministic templates for testing.")
+    st.session_state["gm_mode"] = gm_choice
+    st.caption("Switch to 'static' for reproducible, testable responses.")        
     st.divider()
     st.subheader("💾 Game Persistence")
     col_save, col_load = st.columns(2)
