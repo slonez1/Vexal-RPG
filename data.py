@@ -9,6 +9,14 @@ MAT_PROPS = {
     "Gold-Filigree": {"DT": 2, "Weight": 0.4, "Noise": -2, "Dex_Penalty": 0}
 }
 
+FEAT_LIBRARY = {
+    "Aegis of Light": "Permanent +10 to HP_Max and +5 to Holy Skill.",
+    "Vaxel Synchronicity": "Reduce Arousal gain by 20% and +2 to WIS.",
+    "Bladed Dancer": "Ignore DEX penalties from Steel armor and +2 to DEX.",
+    "Divine Bastion": "+2 to CON and +2 to all Saving Throws.",
+    "Scholar of the Void": "+2 to INT and unlock 'Void Navigation' skill."
+}
+
 INITIAL_GAME_STATE = {
     'name': 'Amara Silvermoon', 'level': 10, 'xp': 4500, 'xp_next': 5500,
     'hp': 250, 'hp_max': 250, 'mana': 200, 'mana_max': 200, 'stamina': 180, 'stamina_max': 180,
