@@ -1,4 +1,4 @@
- import streamlit as st
+import streamlit as st
 from copy import deepcopy
 from data import INITIAL_GAME_STATE, MAT_PROPS
 from conditions import CONDITION_EFFECTS
@@ -47,6 +47,7 @@ def get_effective_stats(_gs_dict):
     """
     Cached calculation of effective stats with all modifiers.
     Accepts a plain dict (not a live reference).
+    Robustly applies attribute modifiers by iterating the actual attribute keys.
     """
     eff_attr = _gs_dict['attributes'].copy()
     pool_mod = 0
@@ -61,8 +62,8 @@ def get_effective_stats(_gs_dict):
         if condition in CONDITION_EFFECTS:
             effects = CONDITION_EFFECTS[condition]['effects']
             
-            # Attribute modifiers
-            for attr in ['STR', 'DEX', 'CON', 'WIS', 'CHA']:
+            # Attribute modifiers — iterate over actual attributes present
+            for attr in list(eff_attr.keys()):
                 if attr in effects:
                     eff_attr[attr] += effects[attr]
             
