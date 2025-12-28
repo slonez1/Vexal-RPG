@@ -1,4 +1,5 @@
 # data.py
+import json
 
 MAT_PROPS = {
     "Leather": {"DT": 1, "Weight": 0.5, "Noise": -1, "Dex_Penalty": 0},
@@ -10,11 +11,14 @@ MAT_PROPS = {
 }
 
 FEAT_LIBRARY = {
-    "Aegis of Light": "Permanent +10 to HP_Max and +5 to Holy Skill.",
-    "Vaxel Synchronicity": "Reduce Arousal gain by 20% and +2 to WIS.",
-    "Bladed Dancer": "Ignore DEX penalties from Steel armor and +2 to DEX.",
-    "Divine Bastion": "+2 to CON and +2 to all Saving Throws.",
-    "Scholar of the Void": "+2 to INT and unlock 'Void Navigation' skill."
+    "Aegis of Light": {"desc": "Permanent +10 Max HP and +5 Holy skill.", "hp": 10, "skill": ("Mystical", "Holy", 5)},
+    "Vaxel Synchronicity": {"desc": "Reduce Arousal gain by 20% and +2 WIS.", "attr": ("WIS", 2)},
+    "Bladed Dancer": {"desc": "Ignore Dex penalties from Steel and +2 DEX.", "attr": ("DEX", 2)},
+    "Divine Bastion": {"desc": "+2 CON and +2 to all Saving Throws.", "attr": ("CON", 2)},
+    "Scholar of the Void": {"desc": "+2 INT; unlock 'Void Navigation' skill.", "attr": ("INT", 2)},
+    "Iron Lung": {"desc": "+20 Max Stamina for long engagements.", "stamina": 20},
+    "Titan's Grip": {"desc": "Use Two-Handed weapons in one hand; +2 STR.", "attr": ("STR", 2)},
+    "Shadow Weaver": {"desc": "Permanent +10 to Stealth; -5 to Noise.", "skill": ("Subterfuge", "Stealth", 10)}
 }
 
 INITIAL_GAME_STATE = {
@@ -23,30 +27,22 @@ INITIAL_GAME_STATE = {
     'arousal': 0, 'orgasm_count': 0, 'divine_favor': 95, 'vaxel_state': "Active", 'turn_counter': 0,
     'attributes': {'STR': 16, 'DEX': 14, 'CON': 14, 'INT': 12, 'WIS': 18, 'CHA': 16},
     'conditions': {"Vexal Active": "(-2 to ALL stats)"},
+    'feats': [],
     'skills': {
-        'Martial': {'One-Handed': 10, 'Two-Handed': 4, 'Bladed': 7, 'Blunt': 4, 'Blocking': 5, 'Heavy Armor': 8, 'Light Armor': 3, 'Unarmed': 1, 'Marksmanship': 3, 'Polearms': 2, 'Axes': 1},
-        'Mystical': {'Holy': 10, 'Arcane': 4, 'Elemental': 3, 'Restoration': 7},
-        'Professional': {'Alchemy': 2, 'Enchanting': 4, 'Survival': 4, 'Athletics': 6, 'Anatomy': 3, 'Cooking': 1, 'Blacksmithing': 4},
-        'Social': {'Persuasion': 3, 'Intimidation': 3, 'Insight': 10, 'Etiquette': 7, 'Bartering': 1},
-        'Subterfuge': {'Stealth': 2, 'Insight': 3}
+        'Martial': {'One-Handed': 10, 'Two-Handed': 4, 'Bladed': 7, 'Heavy Armor': 8},
+        'Mystical': {'Holy': 10, 'Restoration': 7},
+        'Professional': {'Survival': 4, 'Athletics': 6},
+        'Social': {'Insight': 10, 'Etiquette': 7},
+        'Subterfuge': {'Stealth': 2}
     },
     'equipment': {
-        'Head': {'item': 'Blessed Circlet', 'material': 'Gold-Filigree', 'cond': 100},
-        'Torso': {'item': 'Knight-Commander Plate', 'material': 'Steel', 'cond': 85},
-        'Legs': {'item': 'Plated Greaves', 'material': 'Steel', 'cond': 90},
-        'Hands': {'item': 'Steel Gauntlets', 'material': 'Steel', 'cond': 90},
-        'MainHand': {'item': 'Solari Longsword', 'material': 'Silver-Steel', 'cond': 100, 'type': 'Bladed', 'dmg': '2d8', 'scaling': 'DEX'},
-        'OffHand': {'item': 'Kite Shield', 'material': 'Steel', 'cond': 80}
+        'Head': {'item': 'Blessed Circlet', 'material': 'Gold-Filigree', 'cond': 100, 'type': 'Armor'},
+        'Torso': {'item': 'Knight-Commander Plate', 'material': 'Steel', 'cond': 85, 'type': 'Armor'},
+        'MainHand': {'item': 'Solari Longsword', 'material': 'Silver-Steel', 'cond': 100, 'type': 'Weapon', 'dmg': '2d8'},
+        'OffHand': {'item': 'Kite Shield', 'material': 'Steel', 'cond': 80, 'type': 'Armor'}
     },
-    'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Consecrate Ground', 'Lesser Smite', 'Banish Corruption', 'Divine Radiance', 'Arcane Eye', 'Mage Hand', 'Mana Shield', 'Burst of Embers', 'Lesser Heal', 'Purify Flesh', 'Stamina Surge', 'Mend Bone', 'Cure Toxins'],
-    'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Consecrate Ground': 20, 'Lesser Smite': 10, 'Banish Corruption': 25, 'Divine Radiance': 18, 'Arcane Eye': 5, 'Mage Hand': 2, 'Mana Shield': 15, 'Burst of Embers': 8, 'Lesser Heal': 12, 'Purify Flesh': 10, 'Stamina Surge': 10, 'Mend Bone': 15, 'Cure Toxins': 10},
-    'inventory': {
-        'containers': {
-            'Belt Pouch': {'capacity': 5, 'items': ['Whetstone', 'Silver Key']},
-            'Satchel': {'capacity': 15, 'items': ['Dried Rations', 'Holy Oil', 'Bandages']},
-            'Scabbard': {'capacity': 1, 'items': []}
-        },
-        'currency': {'Silver': 150}
-    },
-    'lore_ledger': {'NPCs': {}, 'Locations': {}, 'Main Quest': {"Current Objective": "Enter the Spire."}}
+    'known_spells': ['Sunlight Spear', 'Holy Aegis', 'Lesser Heal'],
+    'mana_costs': {'Sunlight Spear': 15, 'Holy Aegis': 12, 'Lesser Heal': 12},
+    'inventory': {'containers': {'Satchel': ['Whetstone', 'Holy Oil']}, 'currency': {'Silver': 150}},
+    'prev_eff': {} # For notification tracking
 }
