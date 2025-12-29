@@ -1,87 +1,71 @@
-```markdown
-# GM Orchestrator
+GM Stream + CBOR TTS (Cloud Run-ready)
 
-This repository provides a lightweight Python orchestrator that implements the workflow described in the prompt:
-- Auto-summarize recent narrativeHistory into a concise Memory Summary.
-- Build a GM (Game Master) prompt that includes a style echo step, continuity checklist, and tie-ins to unresolved threads.
-- Generate a continuation with low temperature to prevent drift.
-- Optionally run an embedding-based style similarity check and retry/generate with tighter constraints if the output drifts.
+Overview
+- FastAPI backend streams LLM output, splits into linguistically-aware fragments (spaCy), synthesizes each fragment via Google Text-to-Speech using SSML, and streams binary frames (CBOR meta + raw audio) to a browser client that schedules gap-free playback.
 
-Features
-- Auto-summarizer prompt (configurable).
-- GM prompt builder using recent entries and Memory Summary.
-- Continuity checks and [new:] tagging behavior via prompt constraints.
-- Embedding-based similarity check (OpenAI embeddings).
-- Re-priming / retry loop with adjustable thresholds.
+Repo layout
+- backend/ : FastAPI app, TTS, cache index
+- frontend/ : static UI
+- scripts/make_tarball.sh : create tarball for upload
 
-Requirements
-- Python 3.10+
-- OpenAI Python package (or compatible client)
-- numpy
+Quick start (local)
+1) Create project folder and paste files:
+   mkdir gm-tts && cd gm-tts
+   mkdir backend frontend scripts
+   # create files per the repo layout (paste the files in the README)
 
-Installation
-1. Create and activate a Python virtual environment.
-2. Install dependencies:
+2) Create venv & install:
+   cd backend
+   python -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
 
-Configuration
-- Set environment variable OPENAI_API_KEY (required).
-- Optionally set OPENAI_CHAT_MODEL and OPENAI_EMBEDDING_MODEL.
+3) Configure env:
+   cp .env.example .env
+   export $(cat .env | xargs)   # or set env variables manually
+   Ensure GOOGLE_APPLICATION_CREDENTIALS points to a valid service account JSON
 
-Files```markdown
-GM Stream + TTS Demo
+4) Run:
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-This prototype streams incremental GM text from an LLM and synthesizes audio fragments with Google Cloud Text-to-Speech, delivering base64 audio chunks to a browser client which plays them via WebAudio for near-continuous playback.
+5) Open http://localhost:8000 and test.
 
-Prerequisites
-- Python 3.10+
-- Google Cloud service account JSON with Text-to-Speech enabled. Set env var:
-  - GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account.json
-- OpenAI API key set:
-  - OPENAI_API_KEY=sk-...
-- Optional: set OPENAI_CHAT_MODEL to a streaming-capable chat model (defaults to gpt-4o-mini). Use a model that supports streaming in your OpenAI tier.
+Cloud Run deployment (overview)
+- Build & push image:
+  gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/gm-tts
+- Deploy:
+  gcloud run deploy gm-tts --image gcr.io/YOUR_PROJECT_ID/gm-tts --platform managed --region YOUR_REGION --allow-unauthenticated
+- Grant the Cloud Run service account permission to use Text-to-Speech and Storage (roles/texttospeech.admin, roles/storage.objectAdmin OR narrower roles).
 
-Install
-$ cd backend
-$ python -m venv .venv
-$ source .venv/bin/activate
-$ pip install -r requirements.txt
+GCS cache TTL & index
+- The backend keeps a small index (audio_cache/index.json) in your GCS bucket to track timestamps and sizes; purge_older_than runs on new synthesizes and deletes items older than TTL.
 
-Environment variables
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/gcloud-key.json"
-export OPENAI_API_KEY="sk-..."
-# optionally
-export OPENAI_CHAT_MODEL="gpt-4o-mini"
+Drive OAuth & per-user saves (notes)
+- The repo contains placeholders for Drive OAuth variables. Implement these steps to enable per-user saves:
+  1) Create OAuth client in Google Cloud Console (OAuth consent + credentials).
+  2) Add redirect URI (e.g., https://your-cloud-run-url/oauth2callback or localhost-based).
+  3) Implement endpoints to start oauth flow (/auth/drive), and callback (/oauth2callback) to exchange code for tokens and store refresh tokens per user.
+  4) Use googleapiclient or google-auth libraries to upload files to user's Drive.
 
-Run locally
-$ cd backend
-$ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+Why CBOR and GCS
+- CBOR reduces overhead vs JSON/base64 and is robust for binary framing.
+- GCS cache keeps audio fragments persistent across instances, lowering TTS cost.
 
-Open your browser at http://localhost:8000 and paste narrativeHistory lines, click Start.
+Switching to protobuf
+- If you prefer protobuf framing, define a simple message:
+  message AudioMeta { string id = 1; string encoding = 2; uint32 length = 3; }
+- Compile .proto to Python and JS; then write a 4-byte metaLen + protoBytes + audio bytes frame similarly.
 
-Deployment notes (Cloud Run)
-- You can containerize the backend and deploy to Cloud Run.
-- For persistent caching across instances, use Google Cloud Storage (GCS) or Memorystore (Redis) — the prototype uses local disk caching which is ephemeral on Cloud Run.
-- Ensure the Cloud Run service account has Text-to-Speech permission or use a service account key via GOOGLE_APPLICATION_CREDENTIALS (less recommended).
+Next steps I can deliver
+- Produce a git-ready tarball (I can generate and provide a downloadable tar.gz of the repo).
+- Add Drive OAuth handlers and example UI for per-user login & saves.
+- Replace CBOR CDN with an npm-bundled CBOR library and convert frontend to React.
+- Add more advanced SSML mapping from Memory Summary emotional beats (use an emotion classifier to pick presets).
+- Add a small metrics endpoint (cache hits, synth count).
 
-Next steps / improvements
-- Replace base64 JSON audio frames with binary frames for lower overhead and higher throughput.
-- Use SSML with Google TTS for richer prosody and consistent breathing/pauses.
-- Use GCS for cache persistence and a cache index for pruning.
-- Add authentication & rate-limiting for production.
-- Optionally add multiple TTS providers and fallback logic (e.g., ElevenLabs) if you need more expressive voices.
-```
-- gm_orchestrator.py: Main orchestrator implementation.
-- prompts.py: Prompt templates used for summarization and GM generation.
-- utils.py: Helper functions (cosine similarity, token counting placeholder).
-- example_usage.py: Example showing how to call the orchestrator.
-- requirements.txt: Python dependencies.
+If you'd like, I’ll:
+- Generate and upload the repo tarball for you to download now; OR
+- Walk you through creating the files on your machine step-by-step and running locally.
 
-Usage
-- Import functions from gm_orchestrator and call `run_gm_step(...)` passing narrativeHistory entries (oldest -> newest).
-- See `example_usage.py` for a runnable demonstration.
-
-Notes & Safety
-- The orchestrator uses prompts to enforce continuity, but it cannot fully prevent every form of narrative drift. Use the similarity thresholds and re-generation loop to tighten fidelity.
-- This code contains prompt templates that you should adapt to your project's conventions and context.
-```
+Which would you prefer? I can produce the tarball right now for you to download, or (if you want) give a one-line script to create the entire repo from the code above on your machine.
