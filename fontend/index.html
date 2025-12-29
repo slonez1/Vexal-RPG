@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>GM Stream + Binary TTS</title>
+  <title>GM Stream + Binary Header TTS</title>
   <style>
     body { font-family: system-ui, Arial; margin: 20px; }
     #log { white-space: pre-wrap; background:#f6f6f6;padding:12px;border-radius:6px;height:320px;overflow:auto; }
@@ -11,8 +11,8 @@
   </style>
 </head>
 <body>
-  <h2>GM Stream + Binary TTS Demo</h2>
-  <p>Paste narrativeHistory entries (one per line). Click Start to stream GM text + binary audio.</p>
+  <h2>GM Stream + Binary Header TTS Demo</h2>
+  <p>Paste narrativeHistory entries (one per line). Click Start.</p>
   <textarea id="history" placeholder="Line 1\nLine 2\nLine 3"></textarea>
   <div>
     <label>Voice name (Google): <input id="voice" value="en-US-AoedeNeural" /></label>
@@ -21,7 +21,7 @@
     <label>Target words: <input id="target" value="800" size="6" /></label>
     <label>Recent N: <input id="recent_n" value="5" size="4" /></label>
   </div>
-  <button id="start">Start GM Run (stream)</button>
+  <button id="start">Start</button>
   <button id="stop">Stop</button>
   <button id="save">Save game</button>
   <button id="download">Download save</button>
@@ -78,15 +78,12 @@
     ws = new WebSocket((location.origin.replace(/^http/, 'ws')) + "/ws/gm");
     ws.binaryType = "arraybuffer";
 
-    let pendingAudioMeta = null;
-
     ws.onopen = () => {
       log("WebSocket open");
       ws.send(JSON.stringify({ type: "start", history, voice_name: voice, target_words: target, recent_n }));
     };
 
     ws.onmessage = async (ev) => {
-      // If ev.data is a string: JSON meta or other text
       if (typeof ev.data === "string") {
         try {
           const data = JSON.parse(ev.data);
@@ -94,10 +91,6 @@
             log("[Memory Summary]\n" + data.summary + "\n");
           } else if (data.type === "text_fragment") {
             log("[Text] " + data.fragment);
-          } else if (data.type === "audio_meta") {
-            // Next binary frame will be the audio bytes for this meta
-            pendingAudioMeta = data;
-            log(`[Audio meta] id=${data.id} size=${data.length} encoding=${data.encoding}`);
           } else if (data.type === "done") {
             log("=== GM generation done ===");
           } else if (data.type === "error") {
@@ -109,19 +102,26 @@
           console.error("parse json", e, ev.data);
         }
       } else {
-        // Binary frame (audio bytes)
+        // Binary frame: parse header
         const arrayBuffer = ev.data;
-        // Optionally verify length vs pendingAudioMeta.length
-        if (pendingAudioMeta) {
-          // schedule playback
-          scheduleAudioBufferFromArrayBuffer(arrayBuffer);
-          log(`[Audio frame played id=${pendingAudioMeta.id} size=${arrayBuffer.byteLength}]`);
-          pendingAudioMeta = null;
-        } else {
-          // No meta — still try to play
-          scheduleAudioBufferFromArrayBuffer(arrayBuffer);
-          log(`[Audio frame played (no meta) size=${arrayBuffer.byteLength}]`);
+        const view = new DataView(arrayBuffer);
+        // First 4 bytes: big-endian uint32 length of JSON metadata
+        const metaLen = view.getUint32(0, false); // big-endian
+        // Metadata bytes start at offset 4 and run for metaLen bytes
+        const metaBytes = new Uint8Array(arrayBuffer, 4, metaLen);
+        const decoder = new TextDecoder("utf-8");
+        const metaJson = decoder.decode(metaBytes);
+        let meta = {};
+        try {
+          meta = JSON.parse(metaJson);
+        } catch (e) {
+          console.error("meta parse error", e, metaJson);
         }
+        // Audio bytes start at offset 4 + metaLen
+        const audioStart = 4 + metaLen;
+        const audioBytes = arrayBuffer.slice(audioStart);
+        log(`[Audio frame] id=${meta.id || 'unknown'} encoding=${meta.encoding || '?'} size=${audioBytes.byteLength}`);
+        scheduleAudioBufferFromArrayBuffer(audioBytes);
       }
     };
 
@@ -142,7 +142,6 @@
     }
   });
 
-  // Save current "history" content via backend
   saveBtn.addEventListener("click", async () => {
     const name = saveNameInput.value || "save.json";
     const content = document.getElementById("history").value;
