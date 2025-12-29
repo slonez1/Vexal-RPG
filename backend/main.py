@@ -1,28 +1,26 @@
 import os
 import asyncio
-import base64
 import json
 import re
+import base64
+import uuid
 from typing import List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from google.cloud import storage
 from gm_orchestrator_stream import summarize_history, build_gm_user_message, stream_chat_completion_messages
-from tts import synthesize_text_to_bytes
+from tts import synthesize_text_to_bytes, USE_GCS_CACHE, GCS_BUCKET, CACHE_DIR
 
 app = FastAPI()
 
-# Serve simple demo front-end (see frontend/index.html later)
+# Serve frontend (assumes frontend/index.html at ../frontend/index.html)
 @app.get("/")
 async def root():
     return HTMLResponse(open("../frontend/index.html", "r", encoding="utf-8").read())
 
-# Utility: simple sentence splitter — tries to produce reasonably-sized chunks (keeps abbreviations naive)
-SENTENCE_END_RE = re.compile(r'([^\n]{40,}?[\.\?\!…]["\']?\s+)|([^\n]{120,}[\s])', re.DOTALL)
-
+# Simple sentence splitter (same logic as earlier)
 def split_into_sentences(text: str) -> List[str]:
-    # Very naive splitter: split on punctuation followed by whitespace; keep small fragments together.
     pieces = re.split(r'(?<=[\.\?\!\…]["\']?)\s+', text.strip())
-    # If any piece is too long (e.g., > 200 chars) try to break it at comma/semicolon positions
     out = []
     for p in pieces:
         if len(p) > 250:
@@ -32,6 +30,7 @@ def split_into_sentences(text: str) -> List[str]:
             out.append(p)
     return [s.strip() for s in out if s.strip()]
 
+# WebSocket endpoint: streams JSON messages + binary audio frames
 @app.websocket("/ws/gm")
 async def gm_ws(ws: WebSocket):
     await ws.accept()
@@ -50,23 +49,19 @@ async def gm_ws(ws: WebSocket):
         audio_encoding = msg.get("audio_encoding", "OGG_OPUS")
         speaking_rate = float(msg.get("speaking_rate", 1.0))
 
-        # 1) Summarize history synchronously and send to client
+        # 1) Summarize and send summary
         memory_summary = summarize_history(history)
         await ws.send_json({"type": "memory_summary", "summary": memory_summary})
 
-        # 2) Build GM prompt and stream LLM output
+        # 2) Build GM prompt
         recent_entries = history[-recent_n:] if len(history) >= recent_n else history[:]
         user_msg = build_gm_user_message(memory_summary, recent_entries, target_words=target_words)
 
-        # We'll collect incremental text; whenever we detect sentence boundaries, synthesize that fragment
-        text_buffer = ""
-        sentence_buffer = []
-
+        # 3) Stream LLM tokens; whenever we have complete sentence fragments, synthesize and send:
+        buffer = ""
         async for delta in _stream_and_process(user_msg, ws, voice_name, audio_encoding, speaking_rate):
-            # loop inside helper
             pass
 
-        # After completion, send a final 'done' message
         await ws.send_json({"type": "done"})
         await ws.close()
     except WebSocketDisconnect:
@@ -76,21 +71,13 @@ async def gm_ws(ws: WebSocket):
         await ws.close()
 
 async def _stream_and_process(user_msg: str, ws: WebSocket, voice_name: str, audio_encoding: str, speaking_rate: float):
-    """
-    Helper that iterates over streaming LLM output, chunks text into sentences/fragments,
-    synthesizes each fragment and sends both text_fragment and audio_chunk messages to the WS client.
-    """
     buffer = ""
-    # iterate over incremental text deltas from the LLM
     for delta in stream_chat_completion_messages(system_content="You are the Game Master (GM) LLM for an ongoing interactive story. Preserve continuity and match style.", user_content=user_msg):
         buffer += delta
-        # If buffer contains one or more "complete" sentences, extract them
         sentences = split_into_sentences(buffer)
-        # Keep last sentence as possibly incomplete (if no punctuation at end)
         complete = []
         incomplete = ""
         if sentences:
-            # If the last character of buffer ends in sentence-terminating punctuation, all are complete
             if re.search(r'[\.\?\!\…]["\']?\s*$', buffer):
                 complete = sentences
                 incomplete = ""
@@ -99,35 +86,93 @@ async def _stream_and_process(user_msg: str, ws: WebSocket, voice_name: str, aud
                     complete = sentences[:-1]
                     incomplete = sentences[-1]
                 else:
-                    # no complete sentences yet
                     complete = []
                     incomplete = sentences[0]
         else:
             incomplete = buffer
 
-        # For each complete sentence fragment, synthesize & send
         for frag in complete:
             frag_text = frag.strip()
             if not frag_text:
                 continue
-            # Send text fragment first so client can display
+            # Send text fragment first for UI update
             await ws.send_json({"type": "text_fragment", "fragment": frag_text})
-            # Synthesize audio for fragment (may be cached)
+            # Synthesize audio fragment (may be cached)
             audio_bytes = synthesize_text_to_bytes(frag_text, voice_name=voice_name, speaking_rate=speaking_rate, audio_encoding=audio_encoding)
-            b64 = base64.b64encode(audio_bytes).decode("ascii")
-            await ws.send_json({"type": "audio_chunk", "audio_b64": b64, "audio_encoding": audio_encoding})
-        # Set buffer to incomplete remainder
+            # Send JSON meta (id, bytes length, encoding) then send binary frame
+            chunk_id = str(uuid.uuid4())
+            meta = {"type": "audio_meta", "id": chunk_id, "length": len(audio_bytes), "encoding": audio_encoding}
+            await ws.send_text(json.dumps(meta))
+            # send raw binary bytes
+            await ws.send_bytes(audio_bytes)
         buffer = incomplete
-
-        # Yield control to event loop to avoid blocking
         await asyncio.sleep(0.01)
         yield
 
-    # After streaming finishes, if any leftover buffer, synthesize it too
+    # leftover buffer
     if buffer.strip():
         frag_text = buffer.strip()
         await ws.send_json({"type": "text_fragment", "fragment": frag_text})
         audio_bytes = synthesize_text_to_bytes(frag_text, voice_name=voice_name, speaking_rate=speaking_rate, audio_encoding=audio_encoding)
-        b64 = base64.b64encode(audio_bytes).decode("ascii")
-        await ws.send_json({"type": "audio_chunk", "audio_b64": b64, "audio_encoding": audio_encoding})
+        chunk_id = str(uuid.uuid4())
+        meta = {"type": "audio_meta", "id": chunk_id, "length": len(audio_bytes), "encoding": audio_encoding}
+        await ws.send_text(json.dumps(meta))
+        await ws.send_bytes(audio_bytes)
     return
+
+# --- Save / Load endpoints (store JSON/text saves in GCS or local disk) ---
+if USE_GCS_CACHE and GCS_BUCKET:
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(GCS_BUCKET)
+else:
+    storage_client = None
+    bucket = None
+
+@app.post("/save")
+async def save_game(request: Request):
+    payload = await request.json()
+    filename = payload.get("filename")
+    content = payload.get("content")
+    if not filename or content is None:
+        raise HTTPException(status_code=400, detail="filename and content required")
+    # Sanitize filename
+    safe_name = filename.replace("..", "_")
+    if bucket:
+        blob = bucket.blob(f"saves/{safe_name}")
+        blob.upload_from_string(content)
+        return {"status": "ok", "path": f"gs://{GCS_BUCKET}/saves/{safe_name}"}
+    else:
+        path = os.path.join(CACHE_DIR, "saves")
+        os.makedirs(path, exist_ok=True)
+        local_path = os.path.join(path, safe_name)
+        with open(local_path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        return {"status": "ok", "path": local_path}
+
+@app.get("/list-saves")
+async def list_saves():
+    if bucket:
+        blobs = bucket.list_blobs(prefix="saves/")
+        names = [b.name.replace("saves/", "", 1) for b in blobs]
+        return {"saves": names}
+    else:
+        path = os.path.join(CACHE_DIR, "saves")
+        if not os.path.exists(path):
+            return {"saves": []}
+        names = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+        return {"saves": names}
+
+@app.get("/download-save/{name}")
+async def download_save(name: str):
+    safe_name = name.replace("..", "_")
+    if bucket:
+        blob = bucket.blob(f"saves/{safe_name}")
+        if not blob.exists():
+            raise HTTPException(status_code=404, detail="not found")
+        data = blob.download_as_bytes()
+        return StreamingResponse(iter([data]), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{safe_name}"'})
+    else:
+        path = os.path.join(CACHE_DIR, "saves", safe_name)
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="not found")
+        return StreamingResponse(iter([open(path, "rb").read()]), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{safe_name}"'})
