@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>GM Stream + Binary Header TTS</title>
+  <title>GM Stream + CBOR Binary TTS</title>
   <style>
     body { font-family: system-ui, Arial; margin: 20px; }
     #log { white-space: pre-wrap; background:#f6f6f6;padding:12px;border-radius:6px;height:320px;overflow:auto; }
@@ -11,49 +11,44 @@
   </style>
 </head>
 <body>
-  <h2>GM Stream + Binary Header TTS Demo</h2>
-  <p>Paste narrativeHistory entries (one per line). Click Start.</p>
-  <textarea id="history" placeholder="Line 1\nLine 2\nLine 3"></textarea>
+  <h2>GM Stream + CBOR Binary TTS (Gap-free)</h2>
+  <textarea id="history" placeholder="Line 1\nLine 2"></textarea>
   <div>
-    <label>Voice name (Google): <input id="voice" value="en-US-AoedeNeural" /></label>
-  </div>
-  <div>
+    <label>Voice: <input id="voice" value="en-US-AoedeNeural" /></label>
     <label>Target words: <input id="target" value="800" size="6" /></label>
     <label>Recent N: <input id="recent_n" value="5" size="4" /></label>
   </div>
   <button id="start">Start</button>
   <button id="stop">Stop</button>
-  <button id="save">Save game</button>
-  <button id="download">Download save</button>
-  <input id="save_name" placeholder="save.json" style="margin-left:8px" />
 
-  <h3>Output / Log</h3>
+  <h3>Output</h3>
   <div id="log"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/cbor-js@1.0.0/cbor.min.js"></script>
   <script>
+  // Note: cbor-js loaded for decoding; you can also implement your own CBOR decoder or use a local lib.
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
-  const saveBtn = document.getElementById("save");
-  const downloadBtn = document.getElementById("download");
-  const saveNameInput = document.getElementById("save_name");
   const logEl = document.getElementById("log");
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   let ws = null;
   let scheduledUntil = audioCtx.currentTime;
+  const bufferPadding = 0.2; // seconds lookahead to avoid underruns
 
   function log(msg) {
     logEl.textContent += msg + "\n";
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function scheduleAudioBufferFromArrayBuffer(arrayBuffer) {
+  function scheduleDecodedAudio(arrayBuffer) {
     audioCtx.decodeAudioData(arrayBuffer.slice(0), (decoded) => {
-      const source = audioCtx.createBufferSource();
-      source.buffer = decoded;
-      source.connect(audioCtx.destination);
-      const startAt = Math.max(audioCtx.currentTime + 0.05, scheduledUntil + 0.02);
-      source.start(startAt);
+      const src = audioCtx.createBufferSource();
+      src.buffer = decoded;
+      src.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      const startAt = Math.max(now + 0.05, scheduledUntil + 0.01);
+      src.start(startAt);
       scheduledUntil = startAt + decoded.duration;
     }, (err) => {
       console.error("decode error", err);
@@ -61,15 +56,9 @@
   }
 
   startBtn.addEventListener("click", async () => {
-    if (ws) {
-      log("Already running.");
-      return;
-    }
+    if (ws) { log("Already running"); return; }
     const historyText = document.getElementById("history").value.trim();
-    if (!historyText) {
-      alert("Please paste narrativeHistory lines.");
-      return;
-    }
+    if (!historyText) { alert("Paste history lines"); return; }
     const history = historyText.split("\n").map(s => s.trim()).filter(Boolean);
     const voice = document.getElementById("voice").value || "en-US-AoedeNeural";
     const target = parseInt(document.getElementById("target").value || "800");
@@ -79,96 +68,54 @@
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
-      log("WebSocket open");
+      log("WS open");
       ws.send(JSON.stringify({ type: "start", history, voice_name: voice, target_words: target, recent_n }));
     };
+
+    let pendingHeader = null;
 
     ws.onmessage = async (ev) => {
       if (typeof ev.data === "string") {
         try {
           const data = JSON.parse(ev.data);
-          if (data.type === "memory_summary") {
-            log("[Memory Summary]\n" + data.summary + "\n");
-          } else if (data.type === "text_fragment") {
-            log("[Text] " + data.fragment);
-          } else if (data.type === "done") {
-            log("=== GM generation done ===");
-          } else if (data.type === "error") {
-            log("[ERROR] " + data.message);
-          } else {
-            log("[msg] " + JSON.stringify(data).slice(0,200));
-          }
-        } catch (e) {
-          console.error("parse json", e, ev.data);
-        }
-      } else {
-        // Binary frame: parse header
-        const arrayBuffer = ev.data;
-        const view = new DataView(arrayBuffer);
-        // First 4 bytes: big-endian uint32 length of JSON metadata
-        const metaLen = view.getUint32(0, false); // big-endian
-        // Metadata bytes start at offset 4 and run for metaLen bytes
-        const metaBytes = new Uint8Array(arrayBuffer, 4, metaLen);
-        const decoder = new TextDecoder("utf-8");
-        const metaJson = decoder.decode(metaBytes);
-        let meta = {};
-        try {
-          meta = JSON.parse(metaJson);
-        } catch (e) {
-          console.error("meta parse error", e, metaJson);
-        }
-        // Audio bytes start at offset 4 + metaLen
-        const audioStart = 4 + metaLen;
-        const audioBytes = arrayBuffer.slice(audioStart);
-        log(`[Audio frame] id=${meta.id || 'unknown'} encoding=${meta.encoding || '?'} size=${audioBytes.byteLength}`);
-        scheduleAudioBufferFromArrayBuffer(audioBytes);
+          if (data.type === "memory_summary") { log("[Memory Summary]\n" + data.summary); }
+          else if (data.type === "text_fragment") { log("[Text] " + data.fragment); }
+          else if (data.type === "done") { log("== done =="); }
+          else if (data.type === "error") { log("[ERROR] " + data.message); }
+        } catch(e) { console.error("parse", e, ev.data); }
+        return;
       }
+      // Binary frame: first 4 bytes = big-endian length of CBOR meta
+      const arrBuf = ev.data;
+      const view = new DataView(arrBuf);
+      const metaLen = view.getUint32(0, false);
+      const metaBytes = arrBuf.slice(4, 4 + metaLen);
+      // decode CBOR meta
+      let meta = {};
+      try {
+        meta = CBOR.decode(new Uint8Array(metaBytes));
+      } catch (e) {
+        try {
+          // fallback: attempt JSON parse
+          const s = new TextDecoder().decode(metaBytes);
+          meta = JSON.parse(s);
+        } catch (err) {
+          console.error("meta decode error", err);
+        }
+      }
+      const audioStart = 4 + metaLen;
+      const audioBytes = arrBuf.slice(audioStart);
+      log(`[Audio] id=${meta.id || 'unk'} size=${audioBytes.byteLength} enc=${meta.encoding || '?'}`);
+      // schedule playback gap-free
+      scheduleDecodedAudio(audioBytes);
     };
 
-    ws.onclose = () => {
-      log("WebSocket closed");
-      ws = null;
-    };
-    ws.onerror = (e) => {
-      console.error("ws error", e);
-      log("WebSocket error: " + JSON.stringify(e));
-    };
+    ws.onclose = () => { log("WS closed"); ws = null; };
+    ws.onerror = (e) => { console.error("ws err", e); log("WS error"); };
   });
 
   stopBtn.addEventListener("click", () => {
-    if (ws) {
-      ws.close();
-      ws = null;
-    }
-  });
-
-  saveBtn.addEventListener("click", async () => {
-    const name = saveNameInput.value || "save.json";
-    const content = document.getElementById("history").value;
-    const res = await fetch("/save", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ filename: name, content })
-    });
-    const j = await res.json();
-    log("[save] " + JSON.stringify(j));
-  });
-
-  downloadBtn.addEventListener("click", async () => {
-    const name = saveNameInput.value || "save.json";
-    const res = await fetch("/download-save/" + encodeURIComponent(name));
-    if (!res.ok) {
-      log("[download] failed: " + res.status);
-      return;
-    }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
-    log("[download] saved " + name);
+    if (ws) { ws.close(); ws = null; }
   });
   </script>
 </body>
