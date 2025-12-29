@@ -7,3 +7,5 @@ python-dotenv
 numpy
 tqdm
 spacy
+cbor2
+google-auth-oauthlib
