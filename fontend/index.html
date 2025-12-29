@@ -1,0 +1,176 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>GM Stream + Binary TTS</title>
+  <style>
+    body { font-family: system-ui, Arial; margin: 20px; }
+    #log { white-space: pre-wrap; background:#f6f6f6;padding:12px;border-radius:6px;height:320px;overflow:auto; }
+    textarea { width:100%; height:120px; }
+    button { margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h2>GM Stream + Binary TTS Demo</h2>
+  <p>Paste narrativeHistory entries (one per line). Click Start to stream GM text + binary audio.</p>
+  <textarea id="history" placeholder="Line 1\nLine 2\nLine 3"></textarea>
+  <div>
+    <label>Voice name (Google): <input id="voice" value="en-US-AoedeNeural" /></label>
+  </div>
+  <div>
+    <label>Target words: <input id="target" value="800" size="6" /></label>
+    <label>Recent N: <input id="recent_n" value="5" size="4" /></label>
+  </div>
+  <button id="start">Start GM Run (stream)</button>
+  <button id="stop">Stop</button>
+  <button id="save">Save game</button>
+  <button id="download">Download save</button>
+  <input id="save_name" placeholder="save.json" style="margin-left:8px" />
+
+  <h3>Output / Log</h3>
+  <div id="log"></div>
+
+  <script>
+  const startBtn = document.getElementById("start");
+  const stopBtn = document.getElementById("stop");
+  const saveBtn = document.getElementById("save");
+  const downloadBtn = document.getElementById("download");
+  const saveNameInput = document.getElementById("save_name");
+  const logEl = document.getElementById("log");
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  let ws = null;
+  let scheduledUntil = audioCtx.currentTime;
+
+  function log(msg) {
+    logEl.textContent += msg + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function scheduleAudioBufferFromArrayBuffer(arrayBuffer) {
+    audioCtx.decodeAudioData(arrayBuffer.slice(0), (decoded) => {
+      const source = audioCtx.createBufferSource();
+      source.buffer = decoded;
+      source.connect(audioCtx.destination);
+      const startAt = Math.max(audioCtx.currentTime + 0.05, scheduledUntil + 0.02);
+      source.start(startAt);
+      scheduledUntil = startAt + decoded.duration;
+    }, (err) => {
+      console.error("decode error", err);
+    });
+  }
+
+  startBtn.addEventListener("click", async () => {
+    if (ws) {
+      log("Already running.");
+      return;
+    }
+    const historyText = document.getElementById("history").value.trim();
+    if (!historyText) {
+      alert("Please paste narrativeHistory lines.");
+      return;
+    }
+    const history = historyText.split("\n").map(s => s.trim()).filter(Boolean);
+    const voice = document.getElementById("voice").value || "en-US-AoedeNeural";
+    const target = parseInt(document.getElementById("target").value || "800");
+    const recent_n = parseInt(document.getElementById("recent_n").value || "5");
+
+    ws = new WebSocket((location.origin.replace(/^http/, 'ws')) + "/ws/gm");
+    ws.binaryType = "arraybuffer";
+
+    let pendingAudioMeta = null;
+
+    ws.onopen = () => {
+      log("WebSocket open");
+      ws.send(JSON.stringify({ type: "start", history, voice_name: voice, target_words: target, recent_n }));
+    };
+
+    ws.onmessage = async (ev) => {
+      // If ev.data is a string: JSON meta or other text
+      if (typeof ev.data === "string") {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.type === "memory_summary") {
+            log("[Memory Summary]\n" + data.summary + "\n");
+          } else if (data.type === "text_fragment") {
+            log("[Text] " + data.fragment);
+          } else if (data.type === "audio_meta") {
+            // Next binary frame will be the audio bytes for this meta
+            pendingAudioMeta = data;
+            log(`[Audio meta] id=${data.id} size=${data.length} encoding=${data.encoding}`);
+          } else if (data.type === "done") {
+            log("=== GM generation done ===");
+          } else if (data.type === "error") {
+            log("[ERROR] " + data.message);
+          } else {
+            log("[msg] " + JSON.stringify(data).slice(0,200));
+          }
+        } catch (e) {
+          console.error("parse json", e, ev.data);
+        }
+      } else {
+        // Binary frame (audio bytes)
+        const arrayBuffer = ev.data;
+        // Optionally verify length vs pendingAudioMeta.length
+        if (pendingAudioMeta) {
+          // schedule playback
+          scheduleAudioBufferFromArrayBuffer(arrayBuffer);
+          log(`[Audio frame played id=${pendingAudioMeta.id} size=${arrayBuffer.byteLength}]`);
+          pendingAudioMeta = null;
+        } else {
+          // No meta — still try to play
+          scheduleAudioBufferFromArrayBuffer(arrayBuffer);
+          log(`[Audio frame played (no meta) size=${arrayBuffer.byteLength}]`);
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      log("WebSocket closed");
+      ws = null;
+    };
+    ws.onerror = (e) => {
+      console.error("ws error", e);
+      log("WebSocket error: " + JSON.stringify(e));
+    };
+  });
+
+  stopBtn.addEventListener("click", () => {
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+  });
+
+  // Save current "history" content via backend
+  saveBtn.addEventListener("click", async () => {
+    const name = saveNameInput.value || "save.json";
+    const content = document.getElementById("history").value;
+    const res = await fetch("/save", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ filename: name, content })
+    });
+    const j = await res.json();
+    log("[save] " + JSON.stringify(j));
+  });
+
+  downloadBtn.addEventListener("click", async () => {
+    const name = saveNameInput.value || "save.json";
+    const res = await fetch("/download-save/" + encodeURIComponent(name));
+    if (!res.ok) {
+      log("[download] failed: " + res.status);
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+    log("[download] saved " + name);
+  });
+  </script>
+</body>
+</html>
