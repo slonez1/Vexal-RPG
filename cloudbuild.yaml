@@ -36,7 +36,7 @@ steps:
     - '--set-env-vars'
     - 'GCS_BUCKET=${_GCS_BUCKET},USE_GCS_CACHE=${_USE_GCS_CACHE},OPENAI_CHAT_MODEL=${_OPENAI_CHAT_MODEL}'
     - '--set-secrets'
-    - 'OPENAI_API_KEY=projects/$PROJECT_ID/secrets/OPENAI_API_KEY:latest'
+    - 'OPENAI_API_KEY=OPENAI_API_KEY:latest'
 
 images:
 - '${_AR_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$SHORT_SHA'
@@ -44,11 +44,8 @@ images:
 substitutions:
   _REGION: "us-central1"
   _SERVICE_NAME: "gm-tts"
-  # full service account email for Cloud Run
   _SERVICE_ACCOUNT: "gm-tts-run-sa@$PROJECT_ID.iam.gserviceaccount.com"
-  # Artifact Registry location (region)
   _AR_LOCATION: "us-central1"
-  # Artifact Registry repository id you just created
   _AR_REPO: "gm-tts-repo"
   _GCS_BUCKET: "your-audio-cache-bucket"
   _USE_GCS_CACHE: "true"
