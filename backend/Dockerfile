@@ -8,16 +8,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements first (better caching)
-COPY requirements.txt .
+# Copy only backend requirements first for caching
+COPY backend/requirements.txt /tmp/requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Download spaCy model during image build (optional; can be removed if large)
 RUN python -m spacy download en_core_web_sm
 
-# Copy the rest of the backend files into the image
-COPY . /app
+# Copy backend and frontend into image (requires build context to be repo root)
+COPY backend/ /app
+COPY frontend/ /app/frontend
 
 ENV PORT 8080
 EXPOSE 8080
