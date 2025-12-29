@@ -5,7 +5,7 @@ import struct
 import uuid
 from typing import List
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import spacy
@@ -23,16 +23,16 @@ try:
 except Exception as e:
     raise RuntimeError("Run: python -m spacy download en_core_web_sm") from e
 
-# Mount frontend static files if present in the container image
-# backend/ is at repo_root/backend so repo root is two levels up from this file
+# Determine repo root and frontend directory
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = REPO_ROOT / "frontend"
+
 if FRONTEND_DIR.exists():
-    # Mount the frontend directory at root, with html=True so index.html is served
+    # Mount the frontend directory (html=True so index.html is served)
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 else:
     @app.get("/")
-    async def root():
+    async def root_missing():
         return HTMLResponse(content="Frontend not found in container image.", status_code=404)
 
 
@@ -74,7 +74,6 @@ async def gm_ws(ws: WebSocket):
         recent_entries = history[-recent_n:] if len(history) >= recent_n else history[:]
         user_msg = build_gm_user_message(memory_summary, recent_entries, target_words=target_words)
 
-        buffer = ""
         async for _ in _stream_and_process(user_msg, ws, voice_name, audio_encoding, speaking_rate):
             pass
 
@@ -88,7 +87,6 @@ async def gm_ws(ws: WebSocket):
 
 async def _stream_and_process(user_msg: str, ws: WebSocket, voice_name: str, audio_encoding: str, speaking_rate: float):
     buffer = ""
-    min_fragment_chars = 40  # allow small fragments; tune for latency
     for delta in stream_chat_completion_messages(system_content="You are the GM LLM.", user_content=user_msg):
         buffer += delta
         sentences = split_into_sentences_spacy(buffer)
@@ -108,14 +106,13 @@ async def _stream_and_process(user_msg: str, ws: WebSocket, voice_name: str, aud
             incomplete = buffer
 
         if complete:
-            # process/send audio for each complete sentence (existing code continues)
             for s in complete:
-                # send text fragment
+                # Send text fragment
                 await ws.send_text(json.dumps({"type":"text","text":s}))
-                # synthesize audio bytes and send as CBOR or appropriate streaming (existing impl)
+                # Try to synthesize audio and report length (keep behavior similar to prior code)
                 try:
                     audio_bytes = synthesize_text_to_bytes(s, voice_name=voice_name, speaking_rate=speaking_rate, audio_encoding=audio_encoding)
-                    # send audio as base64 or chunked—existing app logic expected CBOR streaming; keep existing approach
+                    # For now send length so client can expect audio; the client code should handle receiving actual audio fragments
                     await ws.send_text(json.dumps({"type":"audio","len":len(audio_bytes)}))
                 except Exception as e:
                     await ws.send_text(json.dumps({"type":"error","message":f"TTS error: {e}"}))
