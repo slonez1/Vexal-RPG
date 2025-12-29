@@ -1,4 +1,4 @@
-GM Stream + CBOR TTS (Cloud Run-ready)  
+GM Stream + CBOR TTS (Cloud Run-ready) 
 
 Overview
 - FastAPI backend streams LLM output, splits into linguistically-aware fragments (spaCy), synthesizes each fragment via Google Text-to-Speech using SSML, and streams binary frames (CBOR meta + raw audio) to a browser client that schedules gap-free playback.
