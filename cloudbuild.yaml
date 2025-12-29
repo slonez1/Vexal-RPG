@@ -1,5 +1,3 @@
-# cloudbuild.yaml
-# Build Docker image from backend/ and push to Artifact Registry, then deploy to Cloud Run.
 options:
   logging: CLOUD_LOGGING_ONLY
 
@@ -31,7 +29,7 @@ steps:
     - '--platform'
     - 'managed'
     - '--service-account'
-    - '${_SERVICE_ACCOUNT}'
+    - 'gm-tts-run-sa@amara1-481702.iam.gserviceaccount.com'
     - '--allow-unauthenticated'
     - '--set-env-vars'
     - 'GCS_BUCKET=${_GCS_BUCKET},USE_GCS_CACHE=${_USE_GCS_CACHE},OPENAI_CHAT_MODEL=${_OPENAI_CHAT_MODEL}'
@@ -44,7 +42,6 @@ images:
 substitutions:
   _REGION: "us-central1"
   _SERVICE_NAME: "gm-tts"
-  _SERVICE_ACCOUNT: "gm-tts-run-sa@$PROJECT_ID.iam.gserviceaccount.com"
   _AR_LOCATION: "us-central1"
   _AR_REPO: "gm-tts-repo"
   _GCS_BUCKET: "your-audio-cache-bucket"
