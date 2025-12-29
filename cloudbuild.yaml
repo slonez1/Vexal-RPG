@@ -1,16 +1,22 @@
 # cloudbuild.yaml
-# Builds Docker image from backend/ and deploys to Cloud Run.
-# Sets logging option to CLOUD_LOGGING_ONLY so builds that run under a custom
-# build.service_account do not require a logs bucket to be specified.
+# Builds Docker image from backend/ (explicit -f) and deploys to Cloud Run.
 options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA', './backend']
+  args:
+    - 'build'
+    - '-t'
+    - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA'
+    - '-f'
+    - './backend/Dockerfile'
+    - './backend'
 
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA']
+  args:
+    - 'push'
+    - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA'
 
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
