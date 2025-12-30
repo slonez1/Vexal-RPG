@@ -1,8 +1,9 @@
+```html
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>GM Stream + CBOR Binary TTS</title>
+  <title>GM Stream + TTS</title>
   <style>
     body { font-family: system-ui, Arial; margin: 20px; }
     #log { white-space: pre-wrap; background:#f6f6f6;padding:12px;border-radius:6px;height:320px;overflow:auto; }
@@ -11,10 +12,14 @@
   </style>
 </head>
 <body>
-  <h2>GM Stream + CBOR Binary TTS (Gap-free)</h2>
+  <h2>GM Stream + TTS</h2>
   <textarea id="history" placeholder="Line 1\nLine 2"></textarea>
   <div>
-    <label>Voice: <input id="voice" value="en-US-Wavenet-D" /></label>
+    <label>Voice:
+      <select id="voice">
+        <option value="">(loading voices...)</option>
+      </select>
+    </label>
     <label>Target words: <input id="target" value="800" size="6" /></label>
     <label>Recent N: <input id="recent_n" value="5" size="4" /></label>
   </div>
@@ -25,16 +30,16 @@
   <div id="log"></div>
 
   <script>
-  console.log("Frontend loaded. Using JSON meta fallback for audio frames.");
+  console.log("Frontend loaded. Fetching available voices...");
 
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
   const logEl = document.getElementById("log");
+  const voiceSelect = document.getElementById("voice");
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   let ws = null;
   let scheduledUntil = audioCtx.currentTime;
-  const bufferPadding = 0.2; // seconds lookahead to avoid underruns
 
   function log(msg) {
     console.log(msg);
@@ -57,12 +62,38 @@
     });
   }
 
+  // Fetch voices and populate select
+  async function loadVoices() {
+    try {
+      const res = await fetch("/api/voices");
+      if (!res.ok) throw new Error("voices fetch failed: " + res.status);
+      const payload = await res.json();
+      const voices = payload.voices || [];
+      voiceSelect.innerHTML = "";
+      voices.forEach(v => {
+        const opt = document.createElement("option");
+        opt.value = v.name;
+        opt.textContent = `${v.name} — ${v.language_codes.join(", ")}` + (v.ssml_gender ? ` (${v.ssml_gender})` : "");
+        voiceSelect.appendChild(opt);
+      });
+      // Try to preselect a common Wavenet voice if present
+      const prefer = "en-US-Wavenet-D";
+      const found = Array.from(voiceSelect.options).find(o => o.value === prefer);
+      if (found) found.selected = true;
+    } catch (e) {
+      console.error("loadVoices failed", e);
+      voiceSelect.innerHTML = '<option value="en-US-Wavenet-D">en-US-Wavenet-D (fallback)</option>';
+    }
+  }
+
+  loadVoices();
+
   startBtn.addEventListener("click", async () => {
     if (ws) { log("Already running"); return; }
     const historyText = document.getElementById("history").value.trim();
     if (!historyText) { alert("Paste history lines"); return; }
     const history = historyText.split("\n").map(s => s.trim()).filter(Boolean);
-    const voice = document.getElementById("voice").value || "en-US-Wavenet-D";
+    const voice = voiceSelect.value || "en-US-Wavenet-D";
     const target = parseInt(document.getElementById("target").value || "800");
     const recent_n = parseInt(document.getElementById("recent_n").value || "5");
 
@@ -89,12 +120,11 @@
         return;
       }
 
-      // Binary frame: first 4 bytes = big-endian length of meta
+      // Binary frame: first 4 bytes = big-endian length of meta (JSON)
       const arrBuf = ev.data;
       const view = new DataView(arrBuf);
       const metaLen = view.getUint32(0, false);
       const metaBytes = arrBuf.slice(4, 4 + metaLen);
-      // decode meta: JSON expected (UTF-8)
       let meta = {};
       try {
         const s = new TextDecoder().decode(metaBytes);
@@ -106,7 +136,6 @@
       const audioStart = 4 + metaLen;
       const audioBytes = arrBuf.slice(audioStart);
       log(`[Audio] id=${meta.id || 'unk'} size=${audioBytes.byteLength} enc=${meta.encoding || '?'}`);
-      // schedule playback gap-free
       scheduleDecodedAudio(audioBytes);
     };
 
