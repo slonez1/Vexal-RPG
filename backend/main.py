@@ -9,7 +9,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import spacy
-import cbor2
 
 from gm_orchestrator_stream import summarize_history, build_gm_user_message, stream_chat_completion_messages
 from tts import synthesize_text_to_bytes
@@ -162,17 +161,17 @@ async def _stream_and_process(user_msg: str, ws: WebSocket, voice_name: str, aud
                 except Exception as e:
                     print("WS: failed to send text_fragment:", repr(e))
 
-                # synthesize audio and send binary CBOR+audio payload the frontend expects
+                # synthesize audio and send binary JSON-meta+audio payload the frontend can decode
                 try:
                     audio_bytes = synthesize_text_to_bytes(s, voice_name=voice_name, speaking_rate=speaking_rate, audio_encoding=audio_encoding)
 
-                    # Build CBOR meta
+                    # Build JSON meta (UTF-8 bytes). Frontend will decode JSON if CBOR not available.
                     meta = {
                         "id": str(uuid.uuid4()),
                         "encoding": audio_encoding,
                         "len": len(audio_bytes)
                     }
-                    meta_bytes = cbor2.dumps(meta)
+                    meta_bytes = json.dumps(meta).encode("utf-8")
                     header = len(meta_bytes).to_bytes(4, "big")
                     payload = header + meta_bytes + audio_bytes
 
