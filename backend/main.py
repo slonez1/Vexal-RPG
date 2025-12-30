@@ -9,6 +9,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import spacy
+from fastapi.responses import JSONResponse
+from backend.tts import list_available_voices
 
 # Import backend modules explicitly to avoid name collisions with repo-root files
 from backend.cache_index import purge_older_than, add_entry, load_index
