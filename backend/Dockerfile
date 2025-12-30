@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # Download spaCy model during image build (optional; remove if you want smaller image)
 RUN python -m spacy download en_core_web_sm
 
-# Copy the entire repository into /app (ensures frontend/ is included if present)
+# Copy the entire repository into /app (ensures frontend or fontend is included if present)
 COPY . /app
 
 ENV PORT 8080
