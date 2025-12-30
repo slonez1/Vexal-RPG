@@ -1,3 +1,4 @@
+# (full file — replace your existing backend/tts.py with this)
 import os
 import io
 import hashlib
@@ -160,8 +161,34 @@ def synthesize_text_to_bytes(text: str, voice_name: str = FALLBACK_VOICE, speaki
             try:
                 return _generate_silence_wav(duration_ms=150, sample_rate=SAMPLE_RATE)
             except Exception:
-                # If silence generation fails, keep last_exc and raise below
                 pass
 
     # If we exhausted attempts without returning, raise to signal failure
     raise RuntimeError(f"TTS failed for voices {try_voices}: {last_exc}")
+
+def list_available_voices(language_code: Optional[str] = None):
+    """
+    Return a list of available voices. Each item contains:
+      { name, language_codes, ssml_gender, natural_sample_rate_hertz }
+    """
+    try:
+        if language_code:
+            resp = tts_client.list_voices(language_code=language_code)
+        else:
+            resp = tts_client.list_voices()
+        out = []
+        for v in resp.voices:
+            try:
+                gender_name = texttospeech.SsmlVoiceGender(v.ssml_gender).name
+            except Exception:
+                gender_name = str(v.ssml_gender)
+            out.append({
+                "name": v.name,
+                "language_codes": list(v.language_codes),
+                "ssml_gender": gender_name,
+                "natural_sample_rate_hertz": getattr(v, "natural_sample_rate_hertz", None)
+            })
+        return out
+    except Exception:
+        print("list_available_voices failed", traceback.format_exc())
+        return []
