@@ -1,3 +1,4 @@
+```html
 <!doctype html>
 <html>
 <head>
@@ -24,9 +25,11 @@
   <h3>Output</h3>
   <div id="log"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/cbor-js@1.0.0/cbor.min.js"></script>
+  <!-- Load CBOR from same origin static files to avoid CORB -->
+  <script src="/static/cbor.min.js"></script>
+
   <script>
-  // Note: cbor-js loaded for decoding; you can also implement your own CBOR decoder or use a local lib.
+  console.log("Frontend loaded. CBOR available:", typeof CBOR !== 'undefined');
   const startBtn = document.getElementById("start");
   const stopBtn = document.getElementById("stop");
   const logEl = document.getElementById("log");
@@ -37,6 +40,7 @@
   const bufferPadding = 0.2; // seconds lookahead to avoid underruns
 
   function log(msg) {
+    console.log(msg);
     logEl.textContent += msg + "\n";
     logEl.scrollTop = logEl.scrollHeight;
   }
@@ -52,6 +56,7 @@
       scheduledUntil = startAt + decoded.duration;
     }, (err) => {
       console.error("decode error", err);
+      log("Audio decode error: " + err);
     });
   }
 
@@ -64,15 +69,15 @@
     const target = parseInt(document.getElementById("target").value || "800");
     const recent_n = parseInt(document.getElementById("recent_n").value || "5");
 
-    ws = new WebSocket((location.origin.replace(/^http/, 'ws')) + "/ws/gm");
+    const wsUrl = (location.origin.replace(/^http/, 'ws')) + "/ws/gm";
+    log("Opening WS: " + wsUrl);
+    ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
       log("WS open");
       ws.send(JSON.stringify({ type: "start", history, voice_name: voice, target_words: target, recent_n }));
     };
-
-    let pendingHeader = null;
 
     ws.onmessage = async (ev) => {
       if (typeof ev.data === "string") {
@@ -82,9 +87,11 @@
           else if (data.type === "text_fragment") { log("[Text] " + data.fragment); }
           else if (data.type === "done") { log("== done =="); }
           else if (data.type === "error") { log("[ERROR] " + data.message); }
-        } catch(e) { console.error("parse", e, ev.data); }
+          else { log("[MSG] " + ev.data); }
+        } catch(e) { console.error("parse", e, ev.data); log("parse error: " + e); }
         return;
       }
+
       // Binary frame: first 4 bytes = big-endian length of CBOR meta
       const arrBuf = ev.data;
       const view = new DataView(arrBuf);
@@ -93,15 +100,16 @@
       // decode CBOR meta
       let meta = {};
       try {
-        meta = CBOR.decode(new Uint8Array(metaBytes));
-      } catch (e) {
-        try {
-          // fallback: attempt JSON parse
+        if (typeof CBOR !== 'undefined') {
+          meta = CBOR.decode(new Uint8Array(metaBytes));
+        } else {
+          // fallback: try JSON parse text
           const s = new TextDecoder().decode(metaBytes);
           meta = JSON.parse(s);
-        } catch (err) {
-          console.error("meta decode error", err);
         }
+      } catch (e) {
+        console.error("meta decode error", e);
+        log("meta decode error: " + e);
       }
       const audioStart = 4 + metaLen;
       const audioBytes = arrBuf.slice(audioStart);
@@ -110,8 +118,8 @@
       scheduleDecodedAudio(audioBytes);
     };
 
-    ws.onclose = () => { log("WS closed"); ws = null; };
-    ws.onerror = (e) => { console.error("ws err", e); log("WS error"); };
+    ws.onclose = (c) => { log("WS closed: " + JSON.stringify({code:c.code,reason:c.reason,wasClean:c.wasClean})); ws = null; };
+    ws.onerror = (e) => { console.error("ws err", e); log("WS error (check console)"); };
   });
 
   stopBtn.addEventListener("click", () => {
