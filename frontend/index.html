@@ -14,7 +14,7 @@
   <h2>GM Stream + CBOR Binary TTS (Gap-free)</h2>
   <textarea id="history" placeholder="Line 1\nLine 2"></textarea>
   <div>
-    <label>Voice: <input id="voice" value="en-US-AoedeNeural" /></label>
+    <label>Voice: <input id="voice" value="en-US-Wavenet-D" /></label>
     <label>Target words: <input id="target" value="800" size="6" /></label>
     <label>Recent N: <input id="recent_n" value="5" size="4" /></label>
   </div>
@@ -24,7 +24,6 @@
   <h3>Output</h3>
   <div id="log"></div>
 
-  <!-- Removed broken CDN reference; server will send JSON meta so no external CBOR is required -->
   <script>
   console.log("Frontend loaded. Using JSON meta fallback for audio frames.");
 
@@ -63,7 +62,7 @@
     const historyText = document.getElementById("history").value.trim();
     if (!historyText) { alert("Paste history lines"); return; }
     const history = historyText.split("\n").map(s => s.trim()).filter(Boolean);
-    const voice = document.getElementById("voice").value || "en-US-AoedeNeural";
+    const voice = document.getElementById("voice").value || "en-US-Wavenet-D";
     const target = parseInt(document.getElementById("target").value || "800");
     const recent_n = parseInt(document.getElementById("recent_n").value || "5");
 
@@ -95,7 +94,7 @@
       const view = new DataView(arrBuf);
       const metaLen = view.getUint32(0, false);
       const metaBytes = arrBuf.slice(4, 4 + metaLen);
-      // decode meta: JSON expected (UTF-8); if you later add CBOR support it can be tried first
+      // decode meta: JSON expected (UTF-8)
       let meta = {};
       try {
         const s = new TextDecoder().decode(metaBytes);
