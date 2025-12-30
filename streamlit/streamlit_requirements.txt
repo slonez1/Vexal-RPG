@@ -1,0 +1,8 @@
+streamlit>=1.25
+google-cloud-texttospeech
+google-cloud-storage
+google-auth
+google-auth-oauthlib
+google-genai  # if you use google.genai; adjust to required package name
+protobuf
+pydantic
