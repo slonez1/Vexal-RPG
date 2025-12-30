@@ -10,11 +10,10 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import spacy
 
-# Import backend.cache_index explicitly to avoid shadowing by top-level cache_index.py
+# Import backend modules explicitly to avoid name collisions with repo-root files
 from backend.cache_index import purge_older_than, add_entry, load_index
-
-from gm_orchestrator_stream import summarize_history, build_gm_user_message, stream_chat_completion_messages
-from tts import synthesize_text_to_bytes
+from backend.gm_orchestrator_stream import summarize_history, build_gm_user_message, stream_chat_completion_messages
+from backend.tts import synthesize_text_to_bytes
 
 app = FastAPI()
 
