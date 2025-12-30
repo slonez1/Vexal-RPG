@@ -1,8 +1,13 @@
 import os
+import io
 import hashlib
 from typing import Optional
 from google.cloud import texttospeech, storage
-from cache_index import add_entry, purge_older_than, load_index
+# Import backend.cache_index explicitly to avoid shadowing by repo-root cache_index.py
+from backend.cache_index import add_entry, purge_older_than, load_index
+
+import wave
+import time
 
 CACHE_DIR = os.getenv("AUDIO_CACHE_DIR", "./audio_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
