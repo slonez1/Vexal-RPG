@@ -51,7 +51,14 @@ async def root():
         if index_path.exists():
             return FileResponse(str(index_path))
     return HTMLResponse(content="Frontend not found in container image.", status_code=404)
-
+    
+@app.get("/api/voices")
+async def api_list_voices(lang: Optional[str] = None):
+    """
+    Returns available Google TTS voices. Optional query param 'lang' to filter (e.g. 'en-US').
+    """
+    voices = list_available_voices(lang)
+    return JSONResponse(content={"voices": voices})
 
 def split_into_sentences_spacy(text: str) -> List[str]:
     doc = nlp(text)
