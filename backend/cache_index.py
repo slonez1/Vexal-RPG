@@ -2,6 +2,7 @@ import json
 import os
 import time
 from google.cloud import storage
+from backend.cache_index import purge_older_than, add_entry, load_index
 
 GCS_BUCKET = os.getenv("GCS_BUCKET", "")
 USE_GCS = bool(GCS_BUCKET and os.getenv("USE_GCS_CACHE", "false").lower() in ("1","true","yes"))
