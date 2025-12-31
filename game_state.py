@@ -73,3 +73,40 @@ def update_condition_timers():
 
 @st.cache_data(ttl=1, show_spinner=False)
 def get_effective_stats(_gs_dict):
+
+def update_condition_timers():
+    """
+    Minimal safe updater for condition timers stored in st.session_state['condition_timers'].
+    Decrements integer timers by 1 and removes entries that reach zero or are invalid.
+    """
+    try:
+        timers = st.session_state.get("condition_timers", {})
+        updated = {}
+        for key, val in timers.items():
+            try:
+                new_val = max(0, int(val) - 1)
+            except Exception:
+                continue
+            if new_val > 0:
+                updated[key] = new_val
+        st.session_state['condition_timers'] = updated
+    except Exception:
+        pass
+def update_condition_timers():
+    """
+    Minimal safe updater for condition timers stored in st.session_state['condition_timers'].
+    Decrements integer timers by 1 and removes entries that reach zero or are invalid.
+    """
+    try:
+        timers = st.session_state.get("condition_timers", {})
+        updated = {}
+        for key, val in timers.items():
+            try:
+                new_val = max(0, int(val) - 1)
+            except Exception:
+                continue
+            if new_val > 0:
+                updated[key] = new_val
+        st.session_state['condition_timers'] = updated
+    except Exception:
+        pass
