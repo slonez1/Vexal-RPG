@@ -53,5 +53,22 @@ def init_session_state():
     except Exception:
         # if lore can't be imported for some reason, skip gracefully
         pass
+        
+cat >> game_state.py <<'PY'
+def update_condition_timers():
+    """Decrement timers and remove expired conditions from game_state."""
+    expired = []
+    # iterate over a copy to avoid runtime mutation issues
+    for condition, turns_left in list(st.session_state.condition_timers.items()):
+        if turns_left <= 0:
+            expired.append(condition)
+            if condition in st.session_state.game_state.get('conditions', {}):
+                del st.session_state.game_state['conditions'][condition]
+        else:
+            st.session_state.condition_timers[condition] -= 1
 
+    for cond in expired:
+        if cond in st.session_state.condition_timers:
+            del st.session_state.condition_timers[cond]
+PY
 # ... rest of game_state.py unchanged (get_effective_stats, etc.)
