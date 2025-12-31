@@ -109,3 +109,17 @@ def get_effective_stats(_gs_dict):
 def get_gs_copy():
     """Return a shallow dict copy of the live game_state for caching calls and safe reads."""
     return dict(st.session_state.game_state)
+def advance_game_time():
+    """Decrement timers and remove expired conditions from game_state."""
+    expired = []
+    for condition, turns_left in list(st.session_state.condition_timers.items()):
+        if turns_left <= 0:
+            expired.append(condition)
+            if condition in st.session_state.game_state.get('conditions', {}):
+                del st.session_state.game_state['conditions'][condition]
+        else:
+            st.session_state.condition_timers[condition] -= 1
+
+    for cond in expired:
+        if cond in st.session_state.condition_timers:
+            del st.session_state.condition_timers[cond]
