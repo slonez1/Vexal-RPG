@@ -2,13 +2,11 @@ import streamlit as st
 from copy import deepcopy
 from data import INITIAL_GAME_STATE, MAT_PROPS
 from conditions import CONDITION_EFFECTS
-from datetime import datetime, timedelta
 
 def init_session_state():
     """
     Initialize all session_state keys used by the app.
     Preserves existing data keys and backfills missing compatibility fields.
-    Also attempts to load static lore files into the session lore repository once.
     """
     if "game_state" not in st.session_state:
         st.session_state.game_state = deepcopy(INITIAL_GAME_STATE)
@@ -20,41 +18,14 @@ def init_session_state():
         st.session_state.tts_enabled = True
     if "condition_timers" not in st.session_state:
         st.session_state.condition_timers = {}
-    if "turn_count" not in st.session_state:
-        st.session_state.turn_count = 0
-    if "last_action_time" not in st.session_state:
-        st.session_state.last_action_time = datetime.utcnow().isoformat()
-    # Backfill skills_exp if absent
+    # Backfill skills_exp and unified experience key if absent (compat with older saves)
     gs = st.session_state.game_state
     if "skills_exp" not in gs:
         gs["skills_exp"] = {cat: {s: 0 for s in sks.keys()} for cat, sks in gs.get("skills", {}).items()}
-    # Ensure canonical experience keys exist
     if "experience" not in gs:
-        gs["experience"] = 0
-    if "experience_next" not in gs:
-        gs["experience_next"] = 100
-    # Game time: persistent in game_state so saves include it
-    if "game_datetime" not in gs:
-        # Default in-game epoch (customizable)
-        gs["game_datetime"] = datetime(1000, 1, 1, 8, 0).isoformat()
-    if "hours_per_turn" not in gs:
-        gs["hours_per_turn"] = 6  # default: 6 in-game hours per player turn
+        # prefer 'xp' if present
+        gs["experience"] = gs.get("xp", 0)
 
-    # Initialize lore and then attempt to load static lore files into the session once.
-    try:
-        import lore as _lore
-        _lore.init_lore()
-        # load static files (idempotent)
-        try:
-            _lore.load_static_lore_files()
-        except Exception as e:
-            # log but don't break initialization
-            st.session_state.setdefault("_lore_load_error", str(e))
-    except Exception:
-        # if lore can't be imported for some reason, skip gracefully
-        pass
-
-# ... rest of game_state.py unchanged (get_effective_stats, etc.)
 def update_condition_timers():
     """Decrement timers and remove expired conditions from game_state."""
     expired = []
@@ -73,40 +44,68 @@ def update_condition_timers():
 
 @st.cache_data(ttl=1, show_spinner=False)
 def get_effective_stats(_gs_dict):
+    """
+    Cached calculation of effective stats with all modifiers.
+    Accepts a plain dict (not a live reference).
+    """
+    eff_attr = _gs_dict['attributes'].copy()
+    pool_mod = 0
+    hp_max_penalty = 0
+    stamina_drain = 0
+    spell_cost_multiplier = 1.0
+    movement_speed = 1.0
+    mana_regen = 1.0
 
-def update_condition_timers():
-    """
-    Minimal safe updater for condition timers stored in st.session_state['condition_timers'].
-    Decrements integer timers by 1 and removes entries that reach zero or are invalid.
-    """
-    try:
-        timers = st.session_state.get("condition_timers", {})
-        updated = {}
-        for key, val in timers.items():
-            try:
-                new_val = max(0, int(val) - 1)
-            except Exception:
-                continue
-            if new_val > 0:
-                updated[key] = new_val
-        st.session_state['condition_timers'] = updated
-    except Exception:
-        pass
-def update_condition_timers():
-    """
-    Minimal safe updater for condition timers stored in st.session_state['condition_timers'].
-    Decrements integer timers by 1 and removes entries that reach zero or are invalid.
-    """
-    try:
-        timers = st.session_state.get("condition_timers", {})
-        updated = {}
-        for key, val in timers.items():
-            try:
-                new_val = max(0, int(val) - 1)
-            except Exception:
-                continue
-            if new_val > 0:
-                updated[key] = new_val
-        st.session_state['condition_timers'] = updated
-    except Exception:
-        pass
+    # Apply condition effects
+    for condition in _gs_dict.get('conditions', {}).keys():
+        if condition in CONDITION_EFFECTS:
+            effects = CONDITION_EFFECTS[condition]['effects']
+            
+            # Attribute modifiers
+            for attr in ['STR', 'DEX', 'CON', 'WIS', 'CHA']:
+                if attr in effects:
+                    eff_attr[attr] += effects[attr]
+            
+            # All attributes modifier (Vexal)
+            if 'all_attrs' in effects:
+                for attr in eff_attr:
+                    eff_attr[attr] += effects['all_attrs']
+            
+            # Pool penalties
+            if 'pool_penalty' in effects:
+                pool_mod += effects['pool_penalty']
+            
+            if 'hp_max_penalty' in effects:
+                hp_max_penalty += effects['hp_max_penalty']
+            
+            if 'stamina_drain' in effects:
+                stamina_drain += effects['stamina_drain']
+            
+            if 'spell_cost_multiplier' in effects:
+                spell_cost_multiplier *= effects['spell_cost_multiplier']
+            
+            if 'movement_speed' in effects:
+                movement_speed *= effects['movement_speed']
+            
+            if 'mana_regen' in effects:
+                mana_regen *= effects['mana_regen']
+    
+    # Apply Armor DEX Penalties ONCE
+    for slot in ['Head', 'Torso', 'Legs', 'Hands', 'OffHand']:
+        if slot in _gs_dict.get('equipment', {}) and _gs_dict['equipment'][slot].get('type') == 'Armor':
+            mat = _gs_dict['equipment'][slot]['material']
+            eff_attr['DEX'] += MAT_PROPS.get(mat, {}).get('Dex_Penalty', 0)
+    
+    return {
+        'attributes': eff_attr,
+        'pool_mod': pool_mod,
+        'hp_max_penalty': hp_max_penalty,
+        'stamina_drain': stamina_drain,
+        'spell_cost_multiplier': spell_cost_multiplier,
+        'movement_speed': movement_speed,
+        'mana_regen': mana_regen
+    }
+
+def get_gs_copy():
+    """Return a shallow dict copy of the live game_state for caching calls and safe reads."""
+    return dict(st.session_state.game_state)
