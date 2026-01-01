@@ -3,6 +3,7 @@ import streamlit as st
 import json
 import time
 from datetime import datetime
+from game_state import advance_game_time
 
 # Local modules
 from data import INITIAL_GAME_STATE, MAT_PROPS
