@@ -52,21 +52,23 @@ steps:
         echo "Neither frontend nor fontend present, skipping copy"
       fi
 
-# Build image using repo root as context and backend/Dockerfile
+# Build image using root Dockerfile as context
 - name: 'gcr.io/cloud-builders/docker'
   args:
     - 'build'
     - '-t'
     - '${_AR_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$SHORT_SHA'
     - '-f'
-    - './backend/Dockerfile'
+    - 'Dockerfile'  # Use the root-level Dockerfile
     - '.'
 
+# Push the built image to Artifact Registry
 - name: 'gcr.io/cloud-builders/docker'
   args:
     - 'push'
     - '${_AR_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$SHORT_SHA'
 
+# Deploy the built image to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: gcloud
   args:
