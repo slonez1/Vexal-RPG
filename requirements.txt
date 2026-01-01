@@ -1,16 +1,17 @@
-streamlit
+# Required Libraries
+streamlit>=1.25
 google-genai
-# other libs you use (openai) optional
 openai>=1.0.0
 numpy>=1.24
 tqdm>=4.65
 python-dotenv>=1.0
 fastapi
 uvicorn[standard]
-openai>=1.0.0
+spacy
 google-cloud-texttospeech
 google-cloud-storage
-python-dotenv
-numpy
-tqdm
-spacy
+google-auth
+google-auth-oauthlib
+protobuf
+pydantic
+cbor2
