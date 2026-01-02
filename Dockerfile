@@ -5,6 +5,7 @@ FROM python:3.11-slim
 ENV PORT=8080
 ENV PIP_NO_CACHE_DIR=1
 ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Install dependencies
@@ -14,6 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY . .
 
-# Server setup
+# Expose the port your app listens on
 EXPOSE 8080
+
+# Define the default app startup command
 CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
