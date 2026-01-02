@@ -6,17 +6,18 @@ ENV PORT=8080
 ENV PIP_NO_CACHE_DIR=1
 ENV PYTHONUNBUFFERED=1
 
+# Set the working directory
 WORKDIR /app
 
 # Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
+# Copy application code
 COPY . .
 
-# Expose the port your app listens on
+# Expose a port for the application
 EXPOSE 8080
 
-# Define the default app startup command
-CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
+# Start the FastAPI application with Uvicorn
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
