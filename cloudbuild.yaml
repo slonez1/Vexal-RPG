@@ -1,11 +1,30 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Accessing GitHub API Token..."
+        GITHUB_TOKEN=$(gcloud secrets versions access latest --secret=GitHub_API_Token)
+        echo "Token accessed (for debug purposes, don't print in production)"
+
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "-t", "gcr.io/amara1-481702/fastapi-app", "."]
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/amara1-481702/fastapi-app"
+      - "."
+
   - name: gcr.io/cloud-builders/docker
-    args: ["push", "gcr.io/amara1-481702/fastapi-app"]
+    args:
+      - "push"
+      - "gcr.io/amara1-481702/fastapi-app"
 
 images:
   - "gcr.io/amara1-481702/fastapi-app"
 
-options:
-  logging: CLOUD_LOGGING_ONLY
+substitutions:
+  _REGION: "us-central1"
