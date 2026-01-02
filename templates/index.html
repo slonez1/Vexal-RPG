@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game UI</title>
+</head>
+<body>
+    <h1>Vexal RPG - Game Console</h1>
+    
+    <p><strong>In-Game Time:</strong> {{ game_time }}</p>
+    
+    <h2>Player Stats</h2>
+    <ul>
+        {% for stat, value in stats.items() %}
+            <li>{{ stat }}: {{ value }}</li>
+        {% endfor %}
+    </ul>
+    
+    <!-- Link back to GM + TTS -->
+    <button onclick="window.location.href='/'">GM Stream + TTS</button>
+</body>
+</html>
