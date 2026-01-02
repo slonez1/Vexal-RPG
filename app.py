@@ -3,6 +3,9 @@ import json
 import time
 from datetime import datetime
 #from game_state import advance_game_time
+import sys
+print("Python sys.path:", sys.path)
+print("Current working directory:", os.getcwd())
 
 st.title("Debugging: Vexal Engine UI")
 st.write("If you see this, the app is loading.")
