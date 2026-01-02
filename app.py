@@ -31,4 +31,49 @@ st.markdown("""
         .attr-label { font-size: 0.55rem; color: #888; text-transform: uppercase; }
         .attr-val { font-size: 0.85rem; font-weight: bold; }
         .bar-container { background-color: #333; border-radius: 5px; height: 12px; width: 100%; margin-bottom: 10px; }
-       
+        .bar-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+        .debuff-badge { display: inline-block; padding: 4px 8px; border-radius: 3px; font-size: 0.7rem; margin-right: 4px; margin-bottom: 4px; font-weight: bold; }
+        .buff-badge { background-color: #28a745; color: white; }
+        .debuff-badge-red { background-color: #ff4b4b; color: white; }
+        .debuff-badge-orange { background-color: #ff9800; color: white; }
+        .star { font-size: 1.2rem; }
+        .chart-container { height: 300px; }
+    </style>
+    <script>
+        function speak(text) {
+            const msg = new SpeechSynthesisUtterance(text);
+            msg.rate = 1.2;
+            window.speechSynthesis.speak(msg);
+        }
+    </script>
+""", unsafe_allow_html=True)
+
+# --- SESSION INIT & LORE ---
+init_session_state()
+lore.init_lore()
+gs = st.session_state.game_state
+
+# when building save_data (serialize_lore_for_save already present)
+# Replace the stray literal entries with guarded assignments so module import won't fail.
+try:
+    st.session_state['lore'] = lore_serial
+except NameError:
+    st.session_state.setdefault('lore', {})
+# preserve last_llm_used if present, default False
+st.session_state['last_llm_used'] = st.session_state.get('last_llm_used', False)
+
+# --- SESSION STATE CLEANUP ---
+MAX_MESSAGES = 50
+if len(st.session_state.messages) > MAX_MESSAGES:
+    st.session_state.messages = st.session_state.messages[-MAX_MESSAGES:]
+
+# --- Update condition timers early so UI shows up-to-date values ---
+update_condition_timers()
+
+# --- EFFECTIVE STATS (cached) ---
+gs_dict = get_gs_copy()
+stats = get_effective_stats(gs_dict)
+eff_attr = stats['attributes']
+p_mod = stats['pool_mod']
+hp_max_penalty = stats['hp_max_penalty']
+stamina_drain = stats['stamina_drain']
