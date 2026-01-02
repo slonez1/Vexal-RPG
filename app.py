@@ -2,7 +2,7 @@ import streamlit as st
 import json
 import time
 from datetime import datetime
-from game_state import advance_game_time
+#from game_state import advance_game_time
 
 # Local modules
 from data import INITIAL_GAME_STATE, MAT_PROPS
@@ -11,7 +11,7 @@ from game_state import (
     update_condition_timers,
     get_effective_stats,
     get_gs_copy,
-    advance_game_time,
+    #advance_game_time,
     apply_time_spec,
     format_game_datetime
 )
