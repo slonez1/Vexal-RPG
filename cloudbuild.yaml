@@ -5,4 +5,4 @@ steps:
     args: ["push", "gcr.io/<your-project-id>/fastapi-app"]
 
 images:
-  - "gcr.io/<your-project-id>/fastapi-app"
+  - "gcr.io/amara1-481702/fastapi-app"
