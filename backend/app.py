@@ -8,5 +8,4 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
 
->>>>>>> 9f02796 (Added backend folder with FastAPI app)
 app = FastAPI()
