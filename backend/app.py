@@ -1,11 +1,10 @@
-<<<<<<< HEAD
-from fastapi import FastAPI, WebSocket, HTTPException
-from pydantic import BaseModel
-
-# Initialize app
-=======
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
 
 app = FastAPI()
+
+# Test API endpoint
+@app.get("/api/test")
+async def test_api():
+    return {"message": "FastAPI is working!"}
