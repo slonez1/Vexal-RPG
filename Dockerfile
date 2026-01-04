@@ -2,12 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies
+# Copy Python dependencies first for caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app files
-COPY . .
+# Copy the rest of the app files
+COPY . /app
 
-# Run FastAPI app
+# Confirm that the FastAPI app is loaded
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8080"]
