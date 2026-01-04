@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app
 
 # Set explicit app directory and entry point
-CMD ["uvicorn", "--app-dir", "backend", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+ENTRYPOINT ["uvicorn", "--app-dir", "backend", "app:app", "--host", "0.0.0.0", "--port", "8080"]
