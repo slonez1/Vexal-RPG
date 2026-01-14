@@ -2,15 +2,16 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
-  # Step 1: Access the GitHub API Token securely
+  # Step 1: Access the SERVICE_ACCOUNT_JSON_KEY securely
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        echo "Accessing GitHub API Token..."
-        export GITHUB_TOKEN=$(gcloud secrets versions access latest --secret=GitHub_API_Token)
-        echo "GitHub token securely accessed."
+        echo "Accessing SERVICE_ACCOUNT_JSON_KEY..."
+        gcloud secrets versions access latest --secret=SERVICE_ACCOUNT_JSON_KEY > /workspace/service-account.json
+        export GOOGLE_APPLICATION_CREDENTIALS=/workspace/service-account.json
+        echo "Service account JSON key retrieved and configured."
 
   # Step 2: Build the Docker image
   - name: gcr.io/cloud-builders/docker
