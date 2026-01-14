@@ -1,0 +1,33 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # Step 1: Access the GitHub API Token securely
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Accessing GitHub API Token..."
+        export GITHUB_TOKEN=$(gcloud secrets versions access latest --secret=GitHub_API_Token)
+        echo "GitHub token securely accessed."
+
+  # Step 2: Build the Docker image
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - "build"
+      - "-t"
+      - "us-central1-docker.pkg.dev/vexal-rpg/fastapi-repo/fastapi-app"
+      - "."
+
+  # Step 3: Push the built image to Artifact Registry
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - "push"
+      - "us-central1-docker.pkg.dev/vexal-rpg/fastapi-repo/fastapi-app"
+
+images:
+  - "us-central1-docker.pkg.dev/vexal-rpg/fastapi-repo/fastapi-app"
+
+substitutions:
+  _REGION: "us-central1"
