@@ -11,4 +11,5 @@ COPY . /app
 
 # Set explicit app directory and entry point
 # Use PORT environment variable (Cloud Run sets this to 8080 by default)
-CMD ["sh", "-c", "uvicorn --app-dir vexal-backend main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--app-dir", "vexal-backend"]
+
