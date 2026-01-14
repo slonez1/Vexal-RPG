@@ -98,6 +98,14 @@ def save_game_state(game_state):
 
 # === API ROUTES ===
 
+@app.get("/")
+async def root():
+    """
+    Serves as the root endpoint.
+    """
+    return {"message": "Welcome to the FastAPI RPG Game Master API! Send requests to /api/gm."}
+
+
 @app.post("/api/gm")
 async def get_gpt_response(command: CommandInput):
     """
