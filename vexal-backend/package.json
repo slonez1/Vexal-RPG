@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "firebase": "^12.7.0",
+    "mitt": "^3.0.1"
+  }
+}
