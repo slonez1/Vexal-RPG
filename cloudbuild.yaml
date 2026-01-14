@@ -30,5 +30,6 @@ steps:
 images:
   - "us-central1-docker.pkg.dev/vexal-rpg/fastapi-repo/fastapi-app"
 
-substitutions:
-  _REGION: "us-central1"
+args:
+  - "--region=us-central1"
+
