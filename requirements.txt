@@ -15,8 +15,8 @@ google-auth-oauthlib
 protobuf
 pydantic
 cbor2
-
-fastapi
+google-cloud-firestore
 uvicorn
 jinja2
 pydantic
+
