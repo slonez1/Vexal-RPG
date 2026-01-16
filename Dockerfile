@@ -1,15 +1,20 @@
+# Base image: Python slim version
 FROM python:3.11-slim
 
-WORKDIR /app
+# Set the working directory to the backend directory
+WORKDIR /app/vexal-backend
 
-# Copy and install dependencies
-COPY requirements.txt .
+# Copy the requirements file
+COPY vexal-backend/requirements.txt .
+
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application files
-COPY . /app
+# Copy the backend directory into the image
+COPY vexal-backend /app/vexal-backend
 
-# Set explicit app directory and entry point
-# Use PORT environment variable (Cloud Run sets this to 8080 by default)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--app-dir", "vexal-backend"]
+# Expose port 8080 for Cloud Run
+EXPOSE 8080
 
+# Command to run the FastAPI app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
