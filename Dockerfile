@@ -11,6 +11,7 @@ COPY vexal-backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the backend directory into the image
+WORKDIR /app/vexal-backend
 COPY vexal-backend /app/vexal-backend
 
 # Expose port 8080 for Cloud Run
@@ -18,3 +19,4 @@ EXPOSE 8080
 
 # Command to run the FastAPI app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+
