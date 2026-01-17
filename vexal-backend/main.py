@@ -111,7 +111,10 @@ def save_game_state(game_state):
 
 
 # === API ROUTES ===
-
+@app.get("/")
+async def root():
+    return {"message": "Hello, World! FastAPI is running!"}
+    
 @app.post("/api/gm")
 async def get_gpt_response(command: CommandInput):
     """
@@ -172,3 +175,4 @@ async def get_gpt_response(command: CommandInput):
     except Exception as critical_error:
         logging.error(f"Critical error: {critical_error}")
         return {"error": "An unexpected error occurred. Please try again later."}, 500
+
